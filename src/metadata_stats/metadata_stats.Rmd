@@ -1,0 +1,219 @@
+---
+title: "Relevant metadata visualization for the MILk cohort"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+options(stringsAsFactors = FALSE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Prepare environment.
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(VennDiagram)
+library(cowplot)
+```
+
+## Load metadata file
+```{r}
+metadata <- read_delim("data/metadata_complete.csv", delim = ',')
+```
+
+## Predominance group
+```{r, message=FALSE, warning=FALSE}
+#load file with per-sample predominance groups information
+bifido_groups <- read_delim("data/predominance_group/bifidos_groups.csv", delim = ',')
+metadata.full <- left_join(metadata, bifido_groups, by=c("Full_name"="Sample"))
+
+groups.stats <- metadata.full %>% 
+  filter(!is.na(Group)) %>% 
+  group_by(Group, Bodysite) %>% 
+  summarise(n=n()) %>% 
+  mutate(tot=ifelse(Bodysite=="Milk", 173, 334)) %>% 
+  mutate(perc=n*100/tot)
+
+#Milk
+milk.pred.groups <- ggplot(groups.stats %>% filter(Bodysite=="Milk"), aes(x="", y=n, fill=Group)) + 
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0) +
+  theme_void() +
+  geom_text(title="Milk", aes(label = paste0("n=",round(n))), position = position_stack(vjust = 0.5))
+
+#Stool
+stool.pred.groups <- ggplot(groups.stats %>% filter(Bodysite=="Stool"), aes(x="", y=n, fill=Group)) + 
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() +
+  geom_text(title="Stool", aes(label = paste0("n=",round(n))), position = position_stack(vjust = 0.5))
+
+pdf(file=paste0("figures/metadata_stats/stool_milk_groups.pdf"), width=12, height=4)
+plot_grid(milk.pred.groups, stool.pred.groups, labels = "AUTO")
+invisible(dev.off())
+plot_grid(milk.pred.groups, stool.pred.groups)
+```
+
+## Delivery mode
+```{r}
+tot_n_samples <- dim(metadata)[1]
+
+dm <- metadata %>% 
+  mutate(Delivery_mode=ifelse(Delivery_mode_cat1=="AVD"|Delivery_mode_cat1=="SVD", "Vaginal",
+                              ifelse(Delivery_mode_cat1=="CS", "CS", Delivery_mode_cat1))) %>% 
+  group_by(Delivery_mode) %>% 
+  summarise(n=n()) %>% 
+  mutate(perc=n*100/tot_n_samples)
+
+dm.plot <- ggplot(dm, aes(x="", y=n, fill=Delivery_mode)) + 
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() +
+  geom_text(aes(label = paste0(round(perc), "%")), position = position_stack(vjust = 0.5))+
+  scale_fill_manual(values=c("navy", "#99CCFF", "cornflowerblue"))
+
+pdf(file=paste0("figures/metadata_stats/delivery_mode.pdf"), width=6, height=4)
+dm.plot
+invisible(dev.off())
+
+dm.plot
+```
+
+## Infant diet
+```{r}
+bf <- metadata %>% 
+  group_by(Exclusive_bf_6m) %>% 
+  summarise(n=n()) %>% 
+  mutate(perc=n*100/tot_n_samples)
+
+bf.plot <- ggplot(bf, aes(x="", y=n, fill=Exclusive_bf_6m)) + 
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() +
+  geom_text(aes(label = paste0(round(perc), "%")), position = position_stack(vjust = 0.5))+
+  scale_fill_manual(values=c("#FF99CC", "#990066"))
+
+pdf(file=paste0("figures/metadata_stats/diet.pdf"), width=6, height=4)
+bf.plot
+invisible(dev.off())
+
+bf.plot
+```
+
+## Sex infant
+```{r}
+sex <- metadata %>% 
+  group_by(Infant_sex) %>% 
+  summarise(n=n()) %>% 
+  mutate(perc=n*100/tot_n_samples)
+
+sex.plot <- ggplot(sex, aes(x="", y=n, fill=Infant_sex)) + 
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() +
+  geom_text(aes(label = paste0(round(perc), "%")), position = position_stack(vjust = 0.5))+
+  scale_fill_manual(values=c("#CC99FF", "#330066"))
+
+pdf(file=paste0("figures/metadata_stats/sex.pdf"), width=6, height=4)
+sex.plot
+invisible(dev.off())
+
+sex.plot
+```
+
+## Antibiotics
+```{r}
+abx <- metadata %>% 
+  group_by(Abx_exposure_any) %>% 
+  summarise(n=n()) %>% 
+  mutate(perc=n*100/tot_n_samples)
+
+abx.plot <- ggplot(abx, aes(x="", y=n, fill=Abx_exposure_any)) + 
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() +
+  geom_text(aes(label = paste0(round(perc), "%")), position = position_stack(vjust = 0.5))+
+  scale_fill_manual(values=c("#CC6666", "#CC3333"))
+
+pdf(file=paste0("figures/metadata_stats/abx.pdf"), width=6, height=4)
+abx.plot
+invisible(dev.off())
+
+abx.plot
+```
+
+##Pre-partum antibiotics
+```{r}
+pr <- metadata %>% 
+  group_by(Prenatal_abx) %>% 
+  summarise(n=n()) %>% 
+  mutate(perc=n*100/tot_n_samples)
+
+pr.plot <- ggplot(pr, aes(x="", y=n, fill=Prenatal_abx)) + 
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() +
+  geom_text(aes(label = paste0(round(perc), "%")), position = position_stack(vjust = 0.5))+
+  scale_fill_manual(values=c("#FF9966", "#FF6600"))
+
+pdf(file=paste0("figures/metadata_stats/prenatal_abx.pdf"), width=6, height=4)
+pr.plot
+invisible(dev.off())
+
+pr.plot
+```
+
+# Number of Mother-infant pairs per each sample type and timepoint (Venn diagram) 
+```{r}
+# Helper function to display Venn diagram
+display_venn <- function(x, ...){
+  library(VennDiagram)
+  grid.newpage()
+  venn_object <- venn.diagram(x, filename = NULL, ...)
+  grid.draw(venn_object)
+}
+
+#get couple names per sample type
+milk1m.couples.list <- c(metadata %>% 
+  filter(Sample_type=="Milk_1M") %>% 
+  select(`Mother Infant Pair`) %>% 
+  distinct() %>% 
+  pull())
+
+milk3m.couples.list <- c(metadata %>% 
+  filter(Sample_type=="Milk_3M") %>% 
+  select(`Mother Infant Pair`) %>% 
+  distinct() %>% 
+  pull())
+
+stool1m.couples.list <- c(metadata %>% 
+  filter(Sample_type=="Stool_1M") %>% 
+  select(`Mother Infant Pair`) %>% 
+  distinct() %>% 
+  pull())
+
+stool6m.couples.list <- c(metadata %>% 
+  filter(Sample_type=="Stool_6M") %>% 
+  select(`Mother Infant Pair`) %>% 
+  distinct() %>% 
+  pull())
+
+venn.couples <- list(
+  milk1m = milk1m.couples.list,
+  milk3m = milk3m.couples.list,
+  stool1m = stool1m.couples.list,
+  stool6m = stool6m.couples.list
+)
+
+venn.plot <- display_venn(venn.couples,
+  fill = c("#e66101", "#fdb863", "#5e3c99", "#b2abd2"))
+
+pdf(file=paste0("figures/metadata_stats/venn.pdf"), width=3.2, height=3.2)
+display_venn(
+  venn.couples,
+  fill = c("#e66101", "#fdb863", "#5e3c99", "#b2abd2"))
+dev.off()
+
+venn.plot
+```
