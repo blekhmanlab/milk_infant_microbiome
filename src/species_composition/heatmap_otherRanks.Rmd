@@ -1,0 +1,282 @@
+---
+title: "metaphlan heatmap amboseli baboons"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message=FALSE)
+options(stringsAsFactors = FALSE)
+```
+
+
+## Prepare environment.
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library("ggdendro")
+library("reshape2")
+library(stringr)
+library(devtools)
+library(ComplexHeatmap)
+library(dendsort)
+library(circlize)
+```
+
+## Load metaphlan tables
+```{r}
+mpa_file.milk <- read_delim("data/species_composition/milk_samples_merged_abundance_contam_rm.txt", delim = '\t')
+mpa_file.stool <- read_delim("data/species_composition/infant_samples_merged_abundance_contam_rm.txt", delim = '\t')
+metadata.master <- read_delim("data/metadata_complete.csv", delim = ',')
+bifido_groups <- read_delim("data/predominance_group/bifidos_groups.csv", delim = ',')
+```
+
+# Maternal milk samples
+
+## Manipulate species table
+```{r}
+#separate full clade name into taxonomic levels
+mpa_file.milk.delim <- mpa_file.milk %>% 
+  tidyr::separate(clade_name, c('Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Strain'), sep ='\\|', remove = FALSE, fill="right") 
+
+#select clades assigned to species level
+mpa_file.milk.clean.family <- mpa_file.milk.delim %>% 
+  filter(!is.na(Family)) 
+
+#keep simplified species name only
+to.drop <- c("clade_name", "Kingdom", "Genus", "Class", "Order", "Phylum", "Species", "Strain")
+mpa_file.milk.family = mpa_file.milk.clean.family[,!(names(mpa_file.milk.clean.family) %in% to.drop)]
+mpa_file.milk.family$Family <- str_remove(mpa_file.milk.family$Family, pattern = "f__")
+mpa_file.milk.family$Family <- gsub("_", " ", mpa_file.milk.family$Family)
+```
+
+## Get family values 
+```{r}
+
+#replace zeros with NA
+mpa_file.milk.family[mpa_file.milk.family == 0.00000] <- NA
+
+milk.family <- mpa_file.milk.family %>%
+  group_by(Family) %>%
+  #mean only on non zero values (after turning the zeros in NaN so they are not included in the mean calculation)
+  summarise(across(everything(), .f = list(mean = mean), na.rm = TRUE)) 
+
+#replace NA with zeros
+is.nan.data.frame <- function(x)
+do.call(cbind, lapply(x, is.nan))
+milk.family[is.nan(milk.family)] <- 0.00000
+
+tmp.milk <- as.data.frame(milk.family %>% 
+  remove_rownames %>% 
+  column_to_rownames(var="Family") %>% 
+  rowSums())
+
+colnames(tmp.milk)[1] = "sum_abs"
+
+milk.family_to_keep <- tmp.milk %>% 
+  arrange(sum_abs) %>% 
+  top_n(6) 
+
+milk.family_to_keep$Family <- rownames(milk.family_to_keep)
+
+milk.family_to_keep.list <- c(milk.family_to_keep %>% 
+                                  select(Family) %>% pull())
+
+mpa_file.milk.family.clean <- milk.family %>% 
+ filter(Family %in% milk.family_to_keep.list) %>% 
+  remove_rownames %>% 
+  column_to_rownames(var="Family") 
+
+#get columns metadata
+colnames_ordered.milk <- rownames_to_column(as.data.frame(t(mpa_file.milk.family.clean))) %>% 
+  select(rowname)
+
+metadata.master.ext <- metadata.master %>% 
+  mutate(Full_name_ext = paste0(Full_name, "_mean"))
+
+colnames_ordered.milk.metadata <- left_join(colnames_ordered.milk, metadata.master.ext, by=c("rowname"="Full_name_ext")) 
+
+#add info bifido groups
+metadata.milk.full <- left_join(colnames_ordered.milk.metadata, bifido_groups, by=c("rowname"="Sample"))
+
+#discard samples that did not pass post-filtering QC
+metadata.milk.full.clean <- metadata.milk.full %>% 
+  filter(`Post_filtering_QC`=="Keep")
+
+mpa.milk.mat <- as.matrix(metadata.milk.full.clean)
+```
+
+## Heatmap for maternal milk samples
+```{r}
+#Set annotation
+ann.milk <- data.frame(metadata.milk.full.clean$`Sample_type`)
+
+colnames(ann.milk) <- c('Sample_type')
+
+colours.milk <- list('Sample_type' = c('Stool_1M' = "#5e3c99", 'Stool_6M' = "#b2abd2", 
+                                  'Milk_1M' = "#e66101", 'Milk_3M' = "#fdb863"))
+ 
+colAnn.milk <- HeatmapAnnotation(df = ann.milk,
+  which = 'col',
+  col = colours.milk,
+  annotation_width = unit(c(0.1, 3), 'cm'),
+  gap = unit(0.5, 'mm'))
+
+col_fun = colorRamp2(c(0, 0.01, 0.1, 1, 70, 100), 
+                     c("white","#e5e8f2","#ccd1e6", "#6776b5", '#35499d', "#000000"))
+
+#remove columns of samples that git discarded in post filtering QC
+keep.samples.milk.list <- c(metadata.milk.full.clean %>% pull(rowname))
+
+mpa_file.milk.species.clean.t.keepOnly <- rownames_to_column(as.data.frame(t(mpa_file.milk.family.clean))) %>% 
+  filter(rowname %in% keep.samples.milk.list)
+
+rownames(mpa_file.milk.species.clean.t.keepOnly) <- mpa_file.milk.species.clean.t.keepOnly[,1]
+mpa_file.milk.species.clean.t.keepOnly.t <- as.data.frame(t(mpa_file.milk.species.clean.t.keepOnly %>% select(-rowname)))
+
+mpa.milk.mat <- as.matrix(mpa_file.milk.species.clean.t.keepOnly.t)
+row_dend.milk = dendsort(hclust(dist(mpa.milk.mat)))
+col_dend.milk = dendsort(hclust(dist(t(mpa.milk.mat))))
+
+#plot heatmap
+milk.heatmap <- Heatmap(mpa.milk.mat, 
+        name = "Abundance", 
+        clustering_distance_rows = "euclidean", 
+        clustering_distance_columns = "euclidean",
+        show_column_names = FALSE, 
+        show_row_dend = FALSE, 
+        col = col_fun,
+        row_names_gp = gpar(fontsize = 8),
+        top_annotation=colAnn.milk, 
+        column_dend_height = unit(5, "mm"))
+
+pdf(file=paste0("figures/species_composition/family_milk.pdf"), width=10, height=2)
+milk.heatmap
+invisible(dev.off())
+
+milk.heatmap
+```
+# Infant Stool Samples
+
+## Manipulate species table
+```{r}
+#separate full clade name into taxonomic levels
+mpa_file.stool.delim <- mpa_file.stool %>% 
+  tidyr::separate(clade_name, c('Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Strain'), sep ='\\|', remove = FALSE, fill="right") 
+
+#select clades assigned to species level
+mpa_file.stool.clean.family <- mpa_file.stool.delim %>% 
+  filter(!is.na(Family)) 
+
+#keep simplified species name only
+to.drop <- c("clade_name", "Kingdom", "Genus", "Class", "Order", "Phylum", "Species", "Strain")
+mpa_file.stool.family = mpa_file.stool.clean.family[,!(names(mpa_file.stool.clean.family) %in% to.drop)]
+mpa_file.stool.family$Family <- str_remove(mpa_file.stool.family$Family, pattern = "f__")
+mpa_file.stool.family$Family <- gsub("_", " ", mpa_file.stool.family$Family)
+```
+
+## Get family values 
+```{r}
+#replace zeros with NA
+mpa_file.stool.family[mpa_file.stool.family == 0.00000] <- NA
+
+stool.family <- mpa_file.stool.family %>%
+  group_by(Family) %>%
+  #mean only on non zero values (after turning the zeros in NaN so they are not included in the mean calculation)
+  summarise(across(everything(), .f = list(mean = mean), na.rm = TRUE)) 
+
+#replace NA with zeros
+is.nan.data.frame <- function(x)
+do.call(cbind, lapply(x, is.nan))
+stool.family[is.nan(stool.family)] <- 0.00000
+
+tmp.stool <- as.data.frame(stool.family %>% 
+  remove_rownames %>% 
+  column_to_rownames(var="Family") %>% 
+  rowSums())
+
+colnames(tmp.stool)[1] = "sum_abs"
+
+stool.family_to_keep <- tmp.stool %>% 
+  arrange(sum_abs) %>% 
+  top_n(6) 
+
+stool.family_to_keep$Family <- rownames(stool.family_to_keep)
+
+stool.family_to_keep.list <- c(stool.family_to_keep %>% 
+                                  select(Family) %>% pull())
+
+mpa_file.stool.family.clean <- stool.family %>% 
+ filter(Family %in% stool.family_to_keep.list) %>% 
+  remove_rownames %>% 
+  column_to_rownames(var="Family") 
+
+#get columns metadata
+colnames_ordered.stool <- rownames_to_column(as.data.frame(t(mpa_file.stool.family.clean))) %>% 
+  select(rowname)
+
+metadata.master.ext <- metadata.master %>% 
+  mutate(Full_name_ext = paste0(Full_name, "_mean"))
+
+colnames_ordered.stool.metadata <- left_join(colnames_ordered.stool, metadata.master.ext, by=c("rowname"="Full_name_ext")) 
+
+#add info bifido groups
+metadata.stool.full <- left_join(colnames_ordered.stool.metadata, bifido_groups, by=c("rowname"="Sample"))
+
+#discard samples that did not pass post-filtering QC
+metadata.stool.full.clean <- metadata.stool.full %>% 
+  filter(`Post_filtering_QC`=="Keep")
+
+mpa.stool.mat <- as.matrix(metadata.stool.full.clean)
+```
+
+## Heatmap for infant stool samples
+```{r}
+#Set annotation
+ann.stool <- data.frame(metadata.stool.full.clean$`Sample_type`)
+
+colnames(ann.stool) <- c('Sample_type')
+
+colours.milk <- list('Sample_type' = c('Stool_1M' = "#5e3c99", 'Stool_6M' = "#b2abd2", 
+                                  'Milk_1M' = "#e66101", 'Milk_3M' = "#fdb863"))
+ 
+colAnn.stool <- HeatmapAnnotation(df = ann.stool,
+  which = 'col',
+  col = colours.milk,
+  annotation_width = unit(c(0.1, 3), 'cm'),
+  gap = unit(0.5, 'mm'))
+
+col_fun = colorRamp2(c(0, 0.01, 0.1, 1, 70, 100), 
+                     c("white","#e5e8f2","#ccd1e6", "#6776b5", '#35499d', "#000000"))
+
+#remove columns of samples that git discarded in post filtering QC
+keep.samples.stool.list <- c(metadata.stool.full.clean %>% pull(rowname))
+
+mpa_file.stool.species.clean.t.keepOnly <- rownames_to_column(as.data.frame(t(mpa_file.stool.family.clean))) %>% 
+  filter(rowname %in% keep.samples.stool.list)
+
+rownames(mpa_file.stool.species.clean.t.keepOnly) <- mpa_file.stool.species.clean.t.keepOnly[,1]
+mpa_file.stool.species.clean.t.keepOnly.t <- as.data.frame(t(mpa_file.stool.species.clean.t.keepOnly %>% select(-rowname)))
+
+mpa.stool.mat <- as.matrix(mpa_file.stool.species.clean.t.keepOnly.t)
+row_dend.stool = dendsort(hclust(dist(mpa.stool.mat)))
+col_dend.stool = dendsort(hclust(dist(t(mpa.stool.mat))))
+
+#plot heatmap
+stool.heatmap <- Heatmap(mpa.stool.mat, 
+        name = "Abundance", 
+        clustering_distance_rows = "euclidean", 
+        clustering_distance_columns = "euclidean",
+        show_column_names = FALSE, 
+        show_row_dend = FALSE, 
+        col = col_fun,
+        row_names_gp = gpar(fontsize = 8),
+        top_annotation=colAnn.stool, 
+        column_dend_height = unit(5, "mm"))
+
+pdf(file=paste0("figures/species_composition/family_stool.pdf"), width=10, height=2)
+stool.heatmap
+invisible(dev.off())
+
+stool.heatmap
+```
