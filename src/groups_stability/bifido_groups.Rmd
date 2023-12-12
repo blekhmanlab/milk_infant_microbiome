@@ -1,0 +1,393 @@
+---
+title: "Predominance groups analysis and Bifidobacteria prevalences and abundances"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+options(stringsAsFactors = FALSE)
+```
+
+#Prepare environment.
+```{r}
+library(tidyverse)
+library(ggplot2)
+library("reshape2")
+library("grid")
+library(data.table)
+library(stringr)
+library(ggalluvial)
+library(ggpattern)
+library(ggpubr)
+library(rstatix)
+```
+
+## Load metadata table
+```{r}
+#metaphlan output table
+mpa_file <- read_delim("data/species_composition/milk_infant_samples_merged_abundance_contam_rm.txt", delim = '\t')
+#metadata table
+metadata <- read_delim("data/metadata_complete.csv", delim = ',')
+metadata <- metadata %>% select(-Correct_sample_name) 
+```
+
+# Prepare files for Bifidobacteria beta diversity plots and predominance groups assignment
+## Get bifidobacteria mean relative abundance for each sample for beta diversity plot
+```{r}
+#separate full clade name into taxonomic levels
+mpa_file.delim <- mpa_file %>% 
+  tidyr::separate(clade_name, c('Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Strain'), sep ='\\|', remove = FALSE, fill="right") 
+
+#select clades assigned to species level
+mpa_file.target <- mpa_file.delim %>% 
+  filter(!is.na(Species) & is.na(Strain)) %>% 
+  filter(stringr::str_detect(Species, 'coli') |
+           stringr::str_detect(Species, 'fragilis') |
+           stringr::str_detect(Species, 'pneumoniae') |
+           stringr::str_detect(Species, 'michiganensis') |
+           stringr::str_detect(Species, 'vulgatus') |
+           stringr::str_detect(Species, 'parvula') |
+           stringr::str_detect(Species, 'perfringens')|
+           stringr::str_detect(Species, 'atypica')|
+           stringr::str_detect(Species, 'dispar'))
+
+#keep simplified species name only
+drop <- c("clade_name", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus","Strain")
+mpa_file.target = mpa_file.target[,!(names(mpa_file.target) %in% drop)]
+mpa_file.target$Species <- str_remove(mpa_file.target$Species, pattern = "s__")
+mpa_file.target$Species <- gsub("_", " ", mpa_file.target$Species)
+
+mpa_file.target.long <- mpa_file.target %>% 
+  pivot_longer(cols = !Species, names_to = "Sample", values_to = "Abundance") 
+
+#split sample ID for later merge with metadata table
+mpa_file.target.long <- mpa_file.target.long %>% 
+  mutate(full_ID=Sample) %>% 
+  tidyr::separate(Sample, c('Sample', 'number'), sep ='_', remove = FALSE, fill="right") 
+
+#merge with metadata table
+merged.target <- left_join(mpa_file.target.long, metadata, by=c("full_ID"="Full_name"))
+
+merged.target.clean <- merged.target %>% 
+  select(Species, Sample, Abundance, Sample_type) %>% 
+  filter(!is.na(Sample_type))
+
+#identify species of interest for biplot beta diversity
+#mean calculated when bifido species are present (zeros are NAs)
+#replace zeros with NA
+merged.target.clean.na <- merged.target.clean
+merged.target.clean.na[merged.target.clean.na == 0.00000] <- NA
+
+merged.target.clean.meanRelAb <- merged.target.clean.na %>% 
+  group_by(Sample) %>% 
+  summarise(mean_rel_ab = mean(Abundance, na.rm=TRUE))
+
+#replace NA with 0s
+is.nan.data.frame <- function(x)
+do.call(cbind, lapply(x, is.nan))
+merged.target.clean.meanRelAb[is.nan(merged.target.clean.meanRelAb)] <- 0.00000
+write_csv(merged.target.clean.meanRelAb, "data/predominance_group/bifidos_relabs_mean.csv")
+```
+
+## Define predominance groups for each sample
+```{r}
+mpa_file.delim.clean <- mpa_file.delim %>% 
+  filter(!is.na(Species) & is.na(Strain)) %>% 
+  select(-clade_name, -Kingdom, -Phylum, -Class, -Order, -Family, -Genus, -Strain)
+  
+mpa_file.delim.clean$Species <- str_remove(mpa_file.delim.clean$Species, pattern = "s__")
+
+mpa_file.delim.clean.long <- mpa_file.delim.clean %>% 
+  pivot_longer(cols=-Species,
+               names_to = "Sample",
+               values_to = "Abundance")
+ 
+mpa_file.delim.clean.long.groups <- mpa_file.delim.clean.long %>% 
+  group_by(Sample) %>% 
+  arrange(desc(Abundance)) %>% 
+  slice(1:1) %>% 
+  mutate(Group=ifelse(Species=="Bifidobacterium_longum", "Group_1", 
+                      ifelse(Species=="Bifidobacterium_breve", "Group_2",
+                             ifelse(Species=="Bifidobacterium_bifidum", "Group_3", "Group_4")))) %>% 
+  select(Group, Sample)
+
+write_csv(mpa_file.delim.clean.long.groups, "data/predominance_group/bifidos_groups.csv")
+```
+
+# Prevalence predominance groups
+
+## Manipulate species output
+```{r}
+#select clades assigned to species level
+mpa_file.bifidos <- mpa_file.delim %>% 
+  filter(!is.na(Species) & is.na(Strain)) %>% 
+  filter(stringr::str_detect(Species, 'Bifido'))
+
+#keep simplified species name only
+drop <- c("clade_name", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus","Strain")
+mpa_file.bifidos = mpa_file.bifidos[,!(names(mpa_file.bifidos) %in% drop)]
+mpa_file.bifidos$Species <- str_remove(mpa_file.bifidos$Species, pattern = "s__")
+mpa_file.bifidos$Species <- gsub("_", " ", mpa_file.bifidos$Species)
+
+mpa_file.bifidos.long <- mpa_file.bifidos %>% 
+  pivot_longer(cols = !Species, names_to = "Sample", values_to = "Abundance") 
+
+#split sample ID for later merge with metadata table
+mpa_file.bifidos.long <- mpa_file.bifidos.long %>% 
+  mutate(full_ID=Sample) %>% 
+  tidyr::separate(Sample, c('Sample', 'number'), sep ='_', remove = FALSE, fill="right") 
+```
+
+## Prevalence of each predominance group across milk and stool samples
+```{r}
+metadata.clean <- metadata %>% 
+  select(Full_name, Bodysite) %>% 
+  filter(!is.na(Bodysite))
+
+mpa_file.delim.clean.long.metadata <- left_join(mpa_file.delim.clean.long, metadata.clean, by=c("Sample"="Full_name"))
+  
+mpa_file.delim.clean.long.metadata.stools <- mpa_file.delim.clean.long.metadata %>% 
+  filter(Bodysite=="Stool") %>% 
+  group_by(Sample, Bodysite) %>% 
+  arrange(desc(Abundance)) %>% 
+  slice(1:1) %>% 
+  mutate(Group=ifelse(Species=="Bifidobacterium_longum", "Group_1", 
+                      ifelse(Species=="Bifidobacterium_breve", "Group_2",
+                             ifelse(Species=="Bifidobacterium_bifidum", "Group_3", "Group_4")))) %>% 
+  select(Group, Sample, Abundance) %>% 
+  group_by(Group,Bodysite) %>% 
+  mutate(perc=n()*100/334) %>% 
+  select(Group, perc, Bodysite) %>% 
+  distinct() %>% 
+  mutate(x=0)
+
+mpa_file.delim.clean.long.metadata.milk <- mpa_file.delim.clean.long.metadata %>% 
+  filter(Bodysite=="Milk") %>% 
+  group_by(Sample, Bodysite) %>% 
+  arrange(desc(Abundance)) %>% 
+  slice(1:1) %>% 
+  mutate(Group=ifelse(Species=="Bifidobacterium_longum", "Group_1", 
+                      ifelse(Species=="Bifidobacterium_breve", "Group_2",
+                             ifelse(Species=="Bifidobacterium_bifidum", "Group_3", "Group_4")))) %>% 
+  select(Group, Sample, Abundance) %>% 
+  group_by(Group,Bodysite) %>% 
+  mutate(perc=n()*100/173) %>% 
+  select(Group, perc, Bodysite) %>% 
+  distinct() %>% 
+  mutate(x=0)
+
+mpa_file.delim.clean.long.metadata.milk.stool <- rbind(mpa_file.delim.clean.long.metadata.milk, mpa_file.delim.clean.long.metadata.stools)
+
+bars.bifidos <- ggplot(mpa_file.delim.clean.long.metadata.milk.stool, aes(fill=Group, y=perc, x=x)) + 
+  geom_bar(position="fill", stat="identity") +
+  scale_fill_manual(values = c("#630a4c","#ad3691", "#de9ecd", "#f2e6ef"))+
+  theme_bw() +
+  facet_grid(~Bodysite)
+
+pdf(file=paste0("figures/groups_stability/groups_stackedBar.pdf"), width=3.5, height=3)
+bars.bifidos
+invisible(dev.off())
+
+bars.bifidos
+```
+
+# Alluvion plot predominance group
+```{r}
+mpa_file.delim.clean.long.groups.metadata <- left_join(mpa_file.delim.clean.long.groups, metadata, by=c("Sample"="Full_name"))
+
+mpa_file.delim.clean.long.groups.metadata <- mpa_file.delim.clean.long.groups.metadata %>% 
+  select(Group, Sample,Bodysite, Timepoint, `Mother Infant Pair`)
+
+mpa_file.delim.clean.long.groups.metadata.milk <- mpa_file.delim.clean.long.groups.metadata %>% 
+  filter(Bodysite=="Milk") 
+
+couples_both_timepoints.milk <- c(mpa_file.delim.clean.long.groups.metadata.milk %>% 
+  group_by(`Mother Infant Pair`) %>% 
+  summarise(n=n()) %>% 
+  filter(n>1) %>% 
+  select(`Mother Infant Pair`) %>% 
+  pull())
+
+mpa_file.delim.clean.long.groups.metadata.milk.bothT <- mpa_file.delim.clean.long.groups.metadata.milk %>% 
+  filter(`Mother Infant Pair` %in% couples_both_timepoints.milk)
+
+mpa_file.delim.clean.long.groups.metadata.stool <- mpa_file.delim.clean.long.groups.metadata %>% 
+  filter(Bodysite=="Stool") 
+
+couples_both_timepoints.stool <- c(mpa_file.delim.clean.long.groups.metadata.stool %>% 
+  group_by(`Mother Infant Pair`) %>% 
+  summarise(n=n()) %>% 
+  filter(n>1) %>% 
+  select(`Mother Infant Pair`) %>% 
+  pull())
+
+mpa_file.delim.clean.long.groups.metadata.stool.bothT <- mpa_file.delim.clean.long.groups.metadata.stool %>% 
+  filter(`Mother Infant Pair` %in% couples_both_timepoints.stool)
+```
+
+## Alluvion Plot for Milk
+```{r}
+al_milk <- read_delim("alluvion_milk.csv", delim = ',')
+
+al_milk.clean <- al_milk %>% 
+  mutate(tmp="tmp")
+
+al_milk.clean.plot <- ggplot(data = al_milk.clean,
+       aes(axis1 = T1, axis2 = T2, y = Perc)) +
+  scale_x_discrete(limits = c("Class", "Sex", "Age"), expand = c(.2, .05)) +
+  xlab("Demographic") +
+  geom_alluvium(aes(fill = T1), alpha=1) +
+  scale_x_discrete(expand = c(.1, .1)) +
+  geom_flow() +
+  geom_stratum(alpha = .3) +
+  theme_bw()+
+  scale_fill_manual(values = c("#630a4c","#ad3691", "#de9ecd", "#f2e6ef")) 
+
+pdf(file=paste0("figures/alluvion_milk.pdf"), width=3.2, height=2.5)
+al_milk.clean.plot
+invisible(dev.off())
+
+al_milk.clean.plot
+```
+
+## Alluvion Plot for Stool samples
+```{r}
+#STOOL
+al_stool <- read_delim("alluvion_stool.csv", delim = ',')
+
+al_stool.clean <- al_stool %>% 
+  mutate(tmp="tmp")
+
+al_stool.clean.plot <- ggplot(data = al_stool.clean,
+       aes(axis1 = T1, axis2 = T2, y = Perc)) +
+  scale_x_discrete(limits = c("Class", "Sex", "Age"), expand = c(.2, .05)) +
+  xlab("Demographic") +
+  geom_alluvium(aes(fill = T1), alpha=1) +
+  scale_x_discrete(expand = c(.1, .1)) +
+  geom_flow() +
+  geom_stratum(alpha = .3) +
+  theme_bw()+
+  scale_fill_manual(values = c("#630a4c","#ad3691", "#de9ecd", "#f2e6ef")) 
+
+pdf(file=paste0("figures/groups_stability/alluvion_stool.pdf"), width=3.2, height=2.5)
+al_stool.clean.plot
+invisible(dev.off())
+
+al_stool.clean.plot
+```
+
+# Prevalences/Abundances Bifidobacteria
+```{r}
+#select clades assigned to species level
+mpa_file.bifidos <- mpa_file.delim %>% 
+  filter(!is.na(Species) & is.na(Strain)) %>% 
+  filter(stringr::str_detect(Species, 'Bifido') | stringr::str_detect(Species, 'coli') 
+         | stringr::str_detect(Species, 'fragilis') | stringr::str_detect(Species, 'Veillonella')
+         | stringr::str_detect(Species, 'perfringens') | stringr::str_detect(Species, 'Phocaeiola')
+         | stringr::str_detect(Species, 'coli') | stringr::str_detect(Species, 'Klebsiella'))
+
+#keep simplified species name only
+drop <- c("clade_name", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus","Strain")
+mpa_file.bifidos = mpa_file.bifidos[,!(names(mpa_file.bifidos) %in% drop)]
+mpa_file.bifidos$Species <- str_remove(mpa_file.bifidos$Species, pattern = "s__")
+mpa_file.bifidos$Species <- gsub("_", " ", mpa_file.bifidos$Species)
+
+mpa_file.bifidos.long <- mpa_file.bifidos %>% 
+  pivot_longer(cols = !Species, names_to = "Sample", values_to = "Abundance") 
+
+#split sample ID for later merge with metadata table
+mpa_file.bifidos.long <- mpa_file.bifidos.long %>% 
+  mutate(full_ID=Sample) %>% 
+  tidyr::separate(Sample, c('Sample', 'number'), sep ='_', remove = FALSE, fill="right") 
+
+merged.bifidos <- left_join(mpa_file.bifidos.long, metadata, by=c("full_ID"="Full_name"))
+```
+
+## Prevalence of bifidobacteria in breastfeeding at 6M vs not breastfeeding
+```{r}
+
+#select only B.longum, B.breve and B.bifidum in infant stool samples
+bf <- merged.bifidos %>% 
+  filter(!is.na(Exclusive_bf_6m)) %>% 
+  filter(Species=="Bifidobacterium longum" | Species=="Bifidobacterium bifidum" | 
+           Species=="Bifidobacterium breve") %>% 
+  filter(Sample_type=="Stool_1M" | Sample_type=="Stool_6M") %>% 
+  mutate(bf_6M=ifelse(Sample_type=="Stool_1M","1M",Exclusive_bf_6m)) %>% 
+  group_by(Sample, bf_6M) %>% 
+  mutate(sum=sum(Abundance))
+
+#1 month samples
+bf.clean.prevs.1M <- bf %>%
+  filter(Sample_type=="Stool_1M") %>% 
+  select(Species, Sample, Abundance) %>% 
+  filter(Abundance>0) %>% 
+  select(-Abundance) %>% 
+  group_by(Species) %>% 
+  summarize(n=n()) %>% 
+  mutate(perc=n*100/175) %>% 
+  mutate(Exclusive_bf_6m="1M", Sample_type="Stool_1M")
+
+#6 months samples
+bf.clean.prevs.6M <- bf %>%
+  filter(Sample_type=="Stool_6M") %>% 
+  select(Species, Sample, Abundance, Sample_type, Exclusive_bf_6m) %>% 
+  filter(Abundance>0 & !is.na(Exclusive_bf_6m)) %>% 
+  select(-Abundance) %>% 
+  group_by(Species, Exclusive_bf_6m) %>% 
+  summarize(n=n()) %>% 
+  mutate(perc=n*100/159) %>% 
+  mutate(Sample_type="Stool_6M")
+
+bf.clean.prevs.allT <- rbind(bf.clean.prevs.1M, bf.clean.prevs.6M)
+
+#reorder bars within groups
+bf.clean.prevs.allT$Exclusive_bf_6m <- factor(bf.clean.prevs.allT$Exclusive_bf_6m, levels = c('1M', 'Yes', 'No'))
+  
+#plot prevalences
+bf.prev.plot <- ggplot(data=bf.clean.prevs.allT, aes(x=reorder(Species, -perc), y=perc, fill=Exclusive_bf_6m)) +
+geom_bar(stat="identity", position="dodge", colour="black") +
+theme_bw()+
+scale_fill_manual(values = c("#5e3c99", "#b2abd2","#c3abc9"))
+
+pdf(file=paste0("figures/groups_stability/bifido_prevalence_bf6M.pdf"), width=4.5, height=2)
+bf.prev.plot
+invisible(dev.off())
+
+bf.prev.plot
+```
+
+## Abundance of bifidobacteria in breastfeeding at 6M vs not breastfeeding
+```{r}
+bf.clean <- bf %>% 
+  select(Species, Sample, Abundance, Sample_type, bf_6M) %>% 
+  filter(!is.na(Sample_type) & Abundance>0)
+
+anno_df = compare_means(Abundance ~ bf_6M, group.by = "Species", data = bf.clean) %>%
+ mutate(y_pos = 40)
+
+#reorder bars within groups
+bf.clean$bf_6M <- factor(bf.clean$bf_6M, levels = c('1M', 'No', 'Yes'))
+
+stat.test <- bf.clean %>%
+  group_by(Species) %>%
+  wilcox_test(Abundance ~ bf_6M) %>%
+  adjust_pvalue(method = "bonferroni") %>%
+  add_significance("p.adj")
+stat.test
+
+bf.abs.plot <- ggplot(bf.clean, aes(x=reorder(Species, -Abundance), y=Abundance, fill=bf_6M)) + 
+  geom_boxplot(position=position_dodge()) +
+  theme_light() +
+  scale_fill_manual(values = c("#5e3c99", "#c3abc9","#b2abd2"))+
+  stat_summary(fun.y = mean, color = "black", position = position_dodge(0.75),
+             geom = "point", shape = 18, size = 3,
+             show.legend = FALSE)
+
+  stat_compare_means(aes(group = bf_6M), label = "p.signif")
+
+pdf(file=paste0("figures/groups_stability/bifido_abundance_bf6M.pdf"), width=4, height=4)
+bf.abs.plot
+invisible(dev.off())
+
+bf.abs.plot
+```
