@@ -9,15 +9,28 @@ If you use the data, or find this work useful, please cite:
 
 ## Requirements
 
-This project requires R version XXX   
+This project requires R version 4.2    
 To install all the required packages you can run:
 
 `Rscript requirements.R`
 
 ## Workflow
 
-#### 1. *Alpha and beta diversity
+#### 1. *Cohort and metadata overview
 
 ```bash
-bin/Rmarkdown src/CDI_analysis/CDI_analysis.Rmd figures/CDI_analysis/CDI_analysis.html
+bin/Rmarkdown src/metadata_stats/metadata_stats.Rmd figures/metadata_stats/metadata_stats.html
+```
+
+#### 2. *Alpha and beta diversity
+
+```bash
+bin/Rmarkdown src/alpha_diversity/alpha_diversity.Rmd figures/alpha_diversity/alpha_diversity.html
+bin/Rmarkdown src/beta_diversity/beta_diversity.Rmd figures/beta_diversity/beta_diversity.html
+```
+
+#### 3. *Species composition with MetaPhlAn4
+
+```bash
+bin/Rmarkdown src/species_composition/species_composition.Rmd figures/species_composition/species_composition.html
 ```
