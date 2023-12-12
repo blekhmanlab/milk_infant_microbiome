@@ -38,8 +38,8 @@ bin/Rmarkdown src/species_composition/species_composition.Rmd figures/species_co
 #### 4. Analysis on Bifidobacteria and species stability
 
 ```bash
-bin/Rmarkdown src/species_composition/species_composition.Rmd figures/species_composition/species_composition.html
-bin/Rmarkdown src/species_composition/species_composition.Rmd figures/species_composition/species_composition.html
+bin/Rmarkdown src/groups_stability/bifido_groups.Rmd figures/groups_stability/bifido_groups.html
+bin/Rmarkdown src/groups_stability/name.Rmd figures/groups_stability/name.html
 ```
 
 #### 5. Functional profiling with HUMAnN3
