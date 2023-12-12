@@ -1,0 +1,281 @@
+---
+title: "Beta diversity analysis - PCoA"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message=FALSE)
+options(stringsAsFactors = FALSE)
+```
+
+#Prepare environment.
+```{r}
+library(tidyverse)
+library(ggplot2)
+library("grid")
+library("ggrepel") #Avoid overlapping labels
+library(stringr)
+library(viridis)
+library(vegan)
+library(cowplot)
+```
+
+## Load tables
+```{r}
+mpa_file <- read_delim("data/milk_infant_rel_abundance_contam_rm.txt", delim = '\t')
+my_metadata <- read_delim("data/metadata_complete.csv", delim = ',')
+bifidos_rel_abs_mean <- read_delim("data/predominance_group/bifidos_relabs_mean_all.csv", delim = ',')
+bifidos_rel_abs <- read_delim("data/predominance_group/bifidos_relabs.csv", delim = ',')
+```
+
+
+## Calculate distances - PCoA with Bray-Curtis distance
+```{r}
+mpa_file = mpa_file[-1,]
+# 
+species_t_matrix <- t(mpa_file[,-1])
+colnames(species_t_matrix) <- mpa_file$clade_name
+# 
+# #order of samples in species_t_matrix needs to be the same fed into col_binds function when metadata are added!!
+# dist_t_matrix = vegdist(species_t_matrix, method = "bray")
+# 
+# cmd_t_res = cmdscale(dist_t_matrix, 
+#                    k = (nrow(species_t_matrix) - 1),
+#                    eig = TRUE)
+# 
+# str(cmd_t_res)
+
+#saveRDS(cmd_t_res, file="cmd_t_res.RData")
+cmd_t_res <- readRDS("cmd_t_res.RData")
+
+#Extracting information of the first two PCs
+pcoa_t_df = tibble(PC1 = cmd_t_res$points[,1], 
+                 PC2 = cmd_t_res$points[,2])
+
+#plot samples
+ggplot(pcoa_t_df, aes(x = PC1, y = PC2)) + 
+        geom_point()
+
+#Adding metadata to the plot
+ordered_IDs <- tibble::rownames_to_column(as.data.frame(species_t_matrix), "Full_name")
+pcoa_t_meta = bind_cols(pcoa_t_df, ordered_IDs[1])
+pcoa_t_meta.all = left_join(pcoa_t_meta, my_metadata, by = c("Full_name"="Old_sample_name"))
+
+pcoa_t_meta.all.clean <- pcoa_t_meta.all %>% 
+  filter(Post_filtering_QC=="Keep")
+
+pcoa_t_meta.all.clean.plot <- ggplot(pcoa_t_meta.all.clean, aes(x = PC1, y = PC2, color = Sample_type)) +
+  geom_point(size=2) +
+  theme_light() +
+  scale_color_manual(values=c("#e66101", "#fdb863", "#5e3c99", "#b2abd2")) +
+  theme(legend.position="bottom")
+
+pdf(file=paste0("figures/beta_diversity/sample_type.pdf"), width=6, height=4)
+pcoa_t_meta.all.clean.plot
+invisible(dev.off())
+
+pcoa_t_meta.all.clean.plot
+```
+
+## PCoA mean relative abundance bifidobacteria
+```{r}
+width_size=5
+height_size=3
+
+bifidos_rel_abs_mean <- read_delim("data/predominance_group/bifidos_relabs_mean.csv", delim = ',')
+
+pcoa_t_meta.all.bifidos_mean <- left_join(pcoa_t_meta.all.clean, bifidos_rel_abs_mean, by=c("Correct_sample_name"= "Sample"))
+
+pcoa_t_meta.all.bifidos_mean.clean <- pcoa_t_meta.all.bifidos_mean %>% 
+  filter(!is.na(mean_rel_ab)) %>% 
+  mutate(mean_rel_ab2 = round(mean_rel_ab,1))
+                                        
+pcoa_t_meta.all.bifidos_mean.clean.plot <- ggplot(pcoa_t_meta.all.bifidos_mean.clean, aes(x = PC1, y = PC2, color = mean_rel_ab)) +
+  geom_point(size=2) +
+  theme_light() +
+  scale_colour_viridis(option="magma", na.value = "#ffeebf", limits=c(0,40))
+  #theme(legend.position="bottom")
+
+pdf(file=paste0("figures/beta_diversity/mean_bifidos_relab_all.pdf"), width=4.5, height=3)
+pcoa_t_meta.all.bifidos_mean.clean.plot
+invisible(dev.off())
+
+pcoa_t_meta.all.bifidos_mean.clean.plot
+```
+
+## PCoA divided by collection time point in infant stool samples only
+```{r}
+timepoint.stool.plot <- ggplot(pcoa_t_meta.all.clean %>% filter(Bodysite=="Stool"), aes(x = PC1, y = PC2, color = Timepoint)) +
+  geom_point(size=2) +
+  theme_light() +
+  scale_color_manual(values=c("navy", "darkorange2"))+
+  theme(legend.position="bottom")
+
+pdf(file=paste0("figures/beta_diversity/timepoint.pdf"), width=width_size, height=height_size)
+timepoint.stool.plot
+invisible(dev.off())
+
+timepoint.stool.plot
+```
+
+## PCoA stratified by pre-partum antibiotic intake
+```{r}
+prenatal.abx.plot <- ggplot(pcoa_t_meta.all.clean, aes(x = PC1, y = PC2, color = `Prenatal_abx`)) +
+  geom_point(size=2) +
+  theme_light() +
+  scale_color_manual(values=c("darkorange2", "black"))+
+  theme(legend.position="bottom")
+
+pdf(file=paste0("figures/beta_diversity/prenatal_abx.pdf"), width=width_size, height=height_size)
+prenatal.abx.plot
+invisible(dev.off())
+
+prenatal.abx.plot
+```
+
+## PCoA stratified by general antibiotics intake 
+```{r}
+
+abx.any.plot <- ggplot(pcoa_t_meta.all.clean %>% filter(Bodysite=="Stool"), aes(x = PC1, y = PC2, color = `Abx_exposure_any`)) +
+  geom_point(size=2) +
+  theme_light() +
+  scale_color_manual(values=c("darkorange2", "black"))+
+  theme(legend.position="bottom")
+
+pdf(file=paste0("figures/beta_diversity/abx-any.pdf"), width=width_size, height=height_size)
+abx.any.plot
+invisible(dev.off())
+
+abx.any.plot
+```
+
+## PCoA stratified by delivery mode
+```{r}
+delivery.mode.clean <- pcoa_t_meta.all.clean %>% 
+  filter(Bodysite=="Stool") %>% 
+  mutate(Delivery_mode=ifelse(Delivery_mode_cat1=="AVD"|Delivery_mode_cat1=="SVD", "Vaginal",
+                              ifelse(Delivery_mode_cat1=="CS", "Ceserean", 
+                                     ifelse(Delivery_mode_cat1=="0", NA, Delivery_mode_cat1))))
+
+delivery.mode.clean.plot <- ggplot(delivery.mode.clean, aes(x = PC1, y = PC2, color = `Delivery_mode`)) +
+  geom_point(size=2) +
+  theme_light() +
+  scale_color_manual(values=c("darkorange2", "black"))+
+  theme(legend.position="bottom")
+
+pdf(file=paste0("figures/beta_diversity/delivery_mode.pdf"), width=5, height=height_size)
+delivery.mode.clean.plot
+invisible(dev.off())
+
+delivery.mode.clean.plot
+```
+
+## PCoA stratified by place of birth
+```{r}
+hospital.plot <- ggplot(pcoa_t_meta.all.clean %>% filter(!is.na(Place_birth)), aes(x = PC1, y = PC2, color = `Place_birth`)) +
+  geom_point(size=2) +
+  theme_light() +
+  scale_color_manual(values=c("skyblue","darkgreen","#b2df8a","purple","pink",
+                                       "violetred2","red","darkorange","gold", "navy"))+
+  theme(legend.position="bottom")
+
+pdf(file=paste0("figures/beta_diversity/hospital.pdf"), width=6, height=height_size)
+hospital.plot
+invisible(dev.off())
+
+hospital.plot
+```
+
+## PCoA stratified by feeding mode at 6 months of age 
+```{r}
+excl.bf.6m.plot <- ggplot(pcoa_t_meta.all.clean %>% filter(Bodysite=="Stool"), aes(x = PC1, y = PC2, color = `Exclusive_bf_6m`)) +
+  geom_point(size=2) +
+  theme_light() +
+  scale_color_manual(values=c("darkorange2", "black"))+
+  theme(legend.position="bottom")
+
+pdf(file=paste0("figures/beta_diversity/exc_bf_6m.pdf"), width=width_size, height=height_size)
+excl.bf.6m.plot
+invisible(dev.off())
+
+excl.bf.6m.plot
+```
+
+## create panel
+```{r}
+panel <- plot_grid(cum.rel.ab.bifiods.plot, delivery.mode.clean.plot,excl.bf.6m.plot, timepoint.stool.plot, abx.any.plot, hospital.plot, labels = "auto", ncol=2)
+
+pdf(file=paste0("figures/beta_diversity/cum_bifidos_relab.pdf"), width=8, height=10)
+panel
+dev.off()
+
+panel
+```
+
+## Biplots: Add species information to the PCoA
+```{r}
+#Now we want to turn this into a biplot and indicate which species are driving the variation in the taxonomic composition by using the Weighted Averages Scores for Species: wascores()
+#see https://github.com/biobakery/biobakery/wiki/Metagenomic-Visualizations#pcoas-and-biplots for reference 
+
+mpa_mat = mpa_file |> 
+  column_to_rownames("clade_name") |> 
+  as.matrix() |>
+  t()
+
+wa_data = wascores(cmd_t_res$points[,1:2], mpa_mat) |>
+    as_tibble(rownames = 'species')
+
+cmd_t_res <- readRDS("cmd_t_res.RData")
+
+#Extracting information of the first two PCs
+pcoa_t_df = tibble(PC1 = cmd_t_res$points[,1], 
+                 PC2 = cmd_t_res$points[,2])
+
+#wa_data
+
+#too many species to plot, selected those of interest
+#species of interest were the ten most prevalent species found in infant stool samples at 1 month of age 
+species_list = c("k__Bacteria|p__Actinobacteria|c__Actinobacteria|o__Bifidobacteriales|f__Bifidobacteriaceae|g__Bifidobacterium|s__Bifidobacterium_longum", 
+                 "k__Bacteria|p__Actinobacteria|c__Actinobacteria|o__Bifidobacteriales|f__Bifidobacteriaceae|g__Bifidobacterium|s__Bifidobacterium_breve", 
+                 "k__Bacteria|p__Actinobacteria|c__Actinobacteria|o__Bifidobacteriales|f__Bifidobacteriaceae|g__Bifidobacterium|s__Bifidobacterium_bifidum", 
+                 "k__Bacteria|p__Proteobacteria|c__Gammaproteobacteria|o__Enterobacterales|f__Enterobacteriaceae|g__Escherichia|s__Escherichia_coli", 
+                 "k__Bacteria|p__Bacteroidetes|c__Bacteroidia|o__Bacteroidales|f__Bacteroidales_unclassified|g__Phocaeicola|s__Phocaeicola_vulgatus", 
+                 "k__Bacteria|p__Bacteroidetes|c__Bacteroidia|o__Bacteroidales|f__Bacteroidaceae|g__Bacteroides|s__Bacteroides_fragilis", 
+                 "k__Bacteria|p__Proteobacteria|c__Gammaproteobacteria|o__Enterobacterales|f__Enterobacteriaceae|g__Klebsiella|s__Klebsiella_pneumoniae",
+                 "k__Bacteria|p__Proteobacteria|c__Gammaproteobacteria|o__Enterobacterales|f__Enterobacteriaceae|g__Klebsiella|s__Klebsiella_michiganensis", 
+                 "k__Bacteria|p__Firmicutes|c__Negativicutes|o__Veillonellales|f__Veillonellaceae|g__Veillonella|s__Veillonella_atypica", 
+                 "k__Bacteria|p__Firmicutes|c__Negativicutes|o__Veillonellales|f__Veillonellaceae|g__Veillonella|s__Veillonella_dispar",
+                 "k__Bacteria|p__Firmicutes|c__Negativicutes|o__Veillonellales|f__Veillonellaceae|g__Veillonella|s__Veillonella_parvula")
+  
+#shorten species name
+wa_species_subset = wa_data %>%  
+  filter(species %in% species_list) %>% 
+  mutate(species_clean = case_when(
+    grepl("breve", species) ~ "B. breve",
+    grepl("longum", species) ~ "B. longum",
+    grepl("bifidum", species) ~ "B. bifidium",
+    grepl("coli", species) ~ "E. coli",
+    grepl("fragilis", species) ~ "B. fragilis",
+    grepl("pneumoniae", species) ~ "K. pneumoniae",
+    grepl("michiganensis", species) ~ "K. michiganensis",
+    grepl("atypica", species) ~ "V. atypica",
+    grepl("dispar", species) ~ "V. dispar",
+    grepl("parvula", species) ~ "V. parvula",
+    grepl("vulgatus", species, ignore.case = TRUE) ~"P. vulgatus"))
+  
+pcoa.labels.plot <- ggplot(pcoa_t_meta.all.clean, aes(x = PC1, y = PC2, color = Sample_type)) +
+  geom_point(size=1.8) +
+  theme_light() +
+  scale_color_manual(values=c("#e66101", "#fdb863", "#5e3c99", "#b2abd2")) +
+  geom_text(data = wa_species_subset,
+              aes(x = V1, y = V2, 
+                  label = species_clean), 
+                  color = "black", 
+                  size = 5)
+
+pdf(file=paste0("figures/beta_diversity/PCoA_biplot_species.pdf"), width=5.1, height=height_size)
+pcoa.labels.plot
+invisible(dev.off())
+
+pcoa.labels.plot
+```
