@@ -16,21 +16,50 @@ To install all the required packages you can run:
 
 ## Workflow
 
-#### 1. *Cohort and metadata overview
+#### 1. Cohort and metadata overview
 
 ```bash
 bin/Rmarkdown src/metadata_stats/metadata_stats.Rmd figures/metadata_stats/metadata_stats.html
 ```
 
-#### 2. *Alpha and beta diversity
+#### 2. Alpha and beta diversity
 
 ```bash
 bin/Rmarkdown src/alpha_diversity/alpha_diversity.Rmd figures/alpha_diversity/alpha_diversity.html
 bin/Rmarkdown src/beta_diversity/beta_diversity.Rmd figures/beta_diversity/beta_diversity.html
 ```
 
-#### 3. *Species composition with MetaPhlAn4
+#### 3. Species composition with MetaPhlAn4
 
 ```bash
 bin/Rmarkdown src/species_composition/species_composition.Rmd figures/species_composition/species_composition.html
+```
+
+#### 4. Analysis on Bifidobacteria and species stability
+
+```bash
+bin/Rmarkdown src/species_composition/species_composition.Rmd figures/species_composition/species_composition.html
+bin/Rmarkdown src/species_composition/species_composition.Rmd figures/species_composition/species_composition.html
+```
+
+#### 5. Functional profiling with HUMAnN3
+
+```bash
+bin/Rmarkdown src/functional_profiling/name.Rmd figures/functional_profiling/name.html
+bin/Rmarkdown src/functional_profiling/name.Rmd figures/functional_profiling/name.html
+bin/Rmarkdown src/functional_profiling/name.Rmd figures/functional_profiling/name.html
+```
+
+#### 6. Strain sharing and persistence
+
+```bash
+bin/Rmarkdown src/strains/name.Rmd figures/strains/name.html
+bin/Rmarkdown src/strains/name.Rmd figures/strains/name.html
+```
+
+#### 7. Antimicrobial resistance genes prediction
+
+```bash
+bin/Rmarkdown src/ARG/ARG_analysis.Rmd figures/ARG/ARG_analysis.html
+bin/Rmarkdown src/ARG/ARG_analysis_MotherInfant_pairs.Rmd figures/ARG/ARG_analysis_MotherInfant_pairs.html
 ```
