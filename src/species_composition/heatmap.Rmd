@@ -29,7 +29,7 @@ mpa_file.milk <- read_delim("data/species_composition/milk_rel_abundance_contam_
 #predominant group metadata
 bifido_groups <- read_delim("data/predominance_group/bifidos_groups.csv", delim = ',')
 #metadata
-metadata.master <- read_delim("data/metadata_complete.csv", delim = ',')
+metadata.master <- read_delim("data/metadata.csv", delim = ',')
 ```
 
 #Heatmap for infant stool samples
