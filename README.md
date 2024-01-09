@@ -6,7 +6,7 @@ The establishment of the gut microbiome in early life is critical for healthy in
 
 If you use the data, or find this work useful, please cite:
 _______
-### Assembly, stability, and dynamics in the infant gut microbiome are linked to bacterial strains and functions in mother’s milk
+### Assembly, stability, and dynamics of the infant gut microbiome are linked to bacterial strains and functions in mother’s milk
 *Mattea Allert† , Pamela Ferretti† , Kelsey E. Johnson, Timothy Heisel, Sara Gonia, Dan Knights, David A. Fields, Frank W. Albert, Ellen W. Demerath, Cheryl A. Gale, and Ran Blekhman.*
 
 ________
