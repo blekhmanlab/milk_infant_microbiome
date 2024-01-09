@@ -1,0 +1,816 @@
+---
+title: "Analysis on antimicrobial resistance genes (ARGs) in milk and infant stool samples"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message=FALSE)
+options(stringsAsFactors = FALSE)
+```
+
+#Prepare environment.
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(circlize)
+library(gridExtra)
+library("ggdendro")
+library("reshape2")
+library("grid")
+library(magrittr)
+library("ggrepel") #Avoid overlapping labels
+library(data.table)
+library(stringr)
+library(smplot)
+library(vegan)
+library(devtools)
+library(ComplexHeatmap)
+library(dendsort)
+library(smplot2)
+```
+
+#Load tables
+```{r}
+#DeepARG output table
+arg_file <- read_delim("all_results.ARG.tsv", delim = '\t')
+#metadata table
+metadata <- read_delim("data/metadata.csv", delim = ',')
+#predominance groups
+bifido_groups <- read_delim("data/predominance_group/bifidos_groups.csv", delim = ',')
+```
+
+# PCoA on antimicrobial resistance genes
+```{r}
+#get sample name
+names <- str_split_fixed(arg_file$filename, "_", 2)
+arg_file.names <- cbind(arg_file, names)
+
+all.samples <- c(metadata %>% 
+  pull(Old_sample_name))
+
+arg_file.clean.pcoa <- arg_file.names %>% 
+  filter(identity>=95) %>% 
+  filter(`1` %in% all.samples)
+  
+arg.counts <- arg_file.clean.pcoa %>% 
+  select(-`predicted_ARG-class`) %>% 
+  mutate(presence=1) %>% 
+  group_by(`#ARG`, `1`) %>% 
+  summarise(n=n())
+
+arg.counts.wide <- pivot_wider(arg.counts,
+            names_from = `1`,
+            values_from = n)
+
+#replace NAs with 0s
+arg.counts.wide[is.na(arg.counts.wide)] <- 0
+
+arg.counts.wide_mat = arg.counts.wide |> 
+  column_to_rownames("#ARG") |> 
+  as.matrix() |>
+  t()
+
+dist_mat = vegdist(arg.counts.wide_mat, method = "bray")
+
+cmd_res = cmdscale(dist_mat, 
+                   k = (nrow(arg.counts.wide_mat) - 1),
+                   eig = TRUE)
+
+pcoa_df = tibble(PC1 = cmd_res$points[,1], 
+                 PC2 = cmd_res$points[,2])
+
+#Adding metadata to the plot
+order.samples <- as.data.frame(a %>% 
+  ungroup() %>% 
+  select(`1`))
+
+meta_ordered = left_join(order.samples, metadata, by=c(`1`="Old_sample_name"))
+meta_ordered.clean <- unique(meta_ordered)
+
+pcoa_meta = bind_cols(pcoa_df, meta_ordered.clean)
+
+pdf(file=paste0("figures/ARG_analysis/pcoa_allSampleType.pdf"), width=6, height=3.5)
+ggplot(pcoa_meta, aes(x = PC1, y = PC2, color = Sample_type)) +
+  geom_point(size=2.5) +
+  theme_light() +
+  scale_color_manual(values=c("#e66101", "#fdb863", "#5e3c99", "#b2abd2")) 
+invisible(dev.off())
+```
+
+# ARGs heatmaps
+
+## ARGs in stool samples
+```{r}
+stool.samples <- c(metadata %>% 
+                     filter(Bodysite=="Stool") %>% 
+                     pull(Old_sample_name))
+
+arg_file.clean.stool <- arg_file.names %>% 
+  filter(identity>=95) %>% 
+  filter(`predicted_ARG-class`!="unclassified" & `predicted_ARG-class`!="multidrug") %>% 
+  filter(`1` %in% stool.samples)
+  
+arg.stool.counts <- arg_file.clean.stool %>% 
+  select(-`predicted_ARG-class`) %>% 
+  mutate(presence=1) %>% 
+  group_by(`#ARG`, `1`) %>% 
+  summarise(n=n())
+
+arg.stool.counts.wide <- pivot_wider(arg.stool.counts,
+            names_from = `1`,
+            values_from = n)
+
+#replace NAs with 0s
+as.data.frame(arg.stool.counts.wide[is.na(arg.stool.counts.wide)] <- 0)
+
+arg.stool.counts.wide.mat = arg.stool.counts.wide %>% 
+  column_to_rownames("#ARG") 
+
+ARG.sums <- as.data.frame(rowSums(arg.stool.counts.wide.mat)) 
+
+ARG_keep <- c(ARG.sums %>% 
+  rownames_to_column(var="ARG") %>% 
+  filter(`rowSums(arg.stool.counts.wide.mat)`>200) %>% 
+  pull(ARG))
+
+arg.stool.counts.wide.mat.clean <- arg.stool.counts.wide.mat %>% 
+  rownames_to_column(var="ARG") %>% 
+  filter(ARG %in% ARG_keep) %>% 
+  column_to_rownames("ARG") %>% 
+  as.matrix()
+
+#get sample names that will be in heatmap
+samples.heatmap <- colnames(arg.stool.counts.wide.mat.clean)
+
+metadata.bifidos <- left_join(metadata, bifido_groups, by=c("Full_name"="Sample"))
+metadata.bifidos.clean <- metadata.bifidos %>% 
+  mutate(Delivery_mode_vag=ifelse(Delivery_mode_cat1=="AVD" | Delivery_mode_cat1=="SVD", "Yes", "No")) %>% 
+  filter(Old_sample_name %in% samples.heatmap) %>%  #extract metadata from only rows that will be in heatmap 
+  arrange(factor(Old_sample_name, levels = samples.heatmap))
+
+#*****ANNOTATION COLUMNS 
+ann <- data.frame(metadata.bifidos.clean$`Sample_type`,
+                  metadata.bifidos.clean$`Delivery_mode_vag`,
+                  metadata.bifidos.clean$`Exclusive_bf`,
+                 metadata.bifidos.clean$`Abx_exposure_any`,
+                 metadata.bifidos.clean$`Group`)
+
+colnames(ann) <- c('Sample_type', 'Delivery_mode_vag','Exclusive_bf', 'Abx_exposure_any', 'Group')
+
+colours <- list('Sample_type' = c('Stool_1M' = "#5e3c99", 'Stool_6M' = "#b2abd2"),
+  'Delivery_mode_vag' = c('Yes' = 'black', 'No' = 'cornflowerblue'),
+  'Exclusive_bf' = c('Yes' = 'black', 'No' = 'cornflowerblue'),
+  'Abx_exposure_any' = c('Yes' = 'black', 'No' = 'cornflowerblue'),
+  'Group' = c('Group_1' = '#630a4c', 'Group_2' = '#ad3691', 'Group_3' = '#de9ecd', 'Group_4' = '#f2e6ef'))
+
+colAnn <- HeatmapAnnotation(df = ann,
+  which = 'col',
+  col = colours,
+  annotation_width = unit(c(0.1, 0.1), 'cm'),
+  gap = unit(0.5, 'mm'))
+
+#*****ANNOTATION ROWS (ARG names)
+#arg.heatmap <- c(rownames(b_mat_heatmap.clean)) #get agr names that will be in heatmap
+arg.heatmap <- as.data.frame(arg.stool.counts.wide.mat.clean) %>% 
+  rownames_to_column(var="name") %>% 
+  select(name)
+
+arg_file.names.small <- arg_file.names %>% 
+  select("#ARG", "predicted_ARG-class") %>% 
+  unique()
+
+b_mat_heatmap.clean.ARGnames.matadata <- left_join(arg.heatmap, arg_file.names.small, by=c("name"="#ARG"))
+
+#check corner case: genes that fall into multiple ARG classes
+#here: MDTK multidrug + fluoroquinolone -> chosen fluoroquinolone
+#and: ARNA polymyxin + peptide -> chosen peptide
+counts <- b_mat_heatmap.clean.ARGnames.matadata %>% 
+  group_by(name) %>% 
+  summarise(n=n())
+
+#get top n classes and collapse the others under the "other" label
+top_classes <- c(b_mat_heatmap.clean.ARGnames.matadata %>% 
+  group_by(`predicted_ARG-class`) %>% 
+  summarise(n=n()) %>% 
+  arrange(desc(n)) %>% 
+  top_n(5) %>% 
+  pull(`predicted_ARG-class`))
+  
+b_mat_heatmap.clean.ARGnames.matadata.noMulticlass <- arg.stool.counts.wide.mat.clean.ARGnames.matadata %>% 
+  filter(!((name=="MDTK" & `predicted_ARG-class` == "multidrug") | (name=="ARNA" & `predicted_ARG-class` == "polymyxin"))) %>% 
+  mutate(class_clean = ifelse(`predicted_ARG-class` %in% top_classes, `predicted_ARG-class`, "other"))
+  
+classes <- as.data.frame(b_mat_heatmap.clean.ARGnames.matadata.noMulticlass) %>% 
+  group_by(`predicted_ARG-class`) %>% 
+  summarise(n=n())
+
+ann2 <- data.frame(b_mat_heatmap.clean.ARGnames.matadata.noMulticlass$class_clean)
+colnames(ann2) <- c('class_clean')
+
+rowcolours <- list(
+  'class_clean' = c('beta-lactam' = 'darkred', 'tetracycline' = 'darkorange',
+                    'fluoroquinolone' = 'gold', 'MLS' = 'navy', 
+                    'aminoglycoside' = 'cornflowerblue', 'other' = 'white', 'diaminopyrimidine'="black"))
+
+rowAnn <- rowAnnotation(df = ann2,
+  col = rowcolours,
+  annotation_width = unit(c(0.1, 0.1), 'cm'),
+  gap = unit(0.5, 'mm'))
+#end annotations
+
+row_dend = dendsort(hclust(dist(arg.stool.counts.wide.mat.clean)))
+col_dend = dendsort(hclust(dist(t(arg.stool.counts.wide.mat.clean))))
+
+col_fun = colorRamp2(c(0, 1, 10, 100, 200, 500), 
+                     c("white","#e5e8f2","#ccd1e6", "#6776b5", '#35499d', "#000000"))
+
+pdf(file=paste0("figures/ARG_analysis/heatmap_stool.pdf"), width=10, height=8)
+Heatmap(arg.stool.counts.wide.mat.clean, 
+        name = "Occurrences", 
+        #cluster_columns = col_dend,
+        clustering_distance_rows = "euclidean", 
+        clustering_distance_columns = "euclidean",
+        show_column_names = FALSE,
+        show_row_names = FALSE,
+        show_row_dend = TRUE, 
+        col = col_fun, 
+        na_col = "red",
+        row_names_gp = gpar(fontsize = 8),
+        top_annotation=colAnn,
+        left_annotation = rowAnn,
+        column_dend_height = unit(5, "mm"))
+invisible(dev.off())
+```
+
+## ARGs in milk samples
+```{r}
+milk.samples <- c(metadata %>% 
+                     filter(Bodysite=="Milk") %>% 
+                     pull(Old_sample_name))
+
+arg_file.clean.heatmap <- arg_file.names %>% 
+  filter(identity>=95) %>% 
+  filter(`predicted_ARG-class`!="unclassified" & `predicted_ARG-class`!="multidrug") %>% 
+  filter(`1` %in% milk.samples)
+  
+arg.milk.counts <- arg_file.clean.heatmap %>% 
+  select(-`predicted_ARG-class`) %>% 
+  mutate(presence=1) %>% 
+  group_by(`#ARG`, `1`) %>% 
+  summarise(n=n())
+
+arg.milk.counts.wide <- pivot_wider(arg.milk.counts,
+            names_from = `1`,
+            values_from = n)
+
+#replace NAs with 0s
+as.data.frame(arg.milk.counts.wide[is.na(arg.milk.counts.wide)] <- 0)
+
+arg.milk.counts.wide.mat = arg.milk.counts.wide %>% 
+  column_to_rownames("#ARG") 
+
+ARG.sums <- as.data.frame(rowSums(arg.milk.counts.wide.mat)) 
+
+ARG_keep <- c(ARG.sums %>% 
+  rownames_to_column(var="ARG") %>% 
+  filter(`rowSums(arg.milk.counts.wide.mat)`>10) %>% 
+  pull(ARG))
+
+arg.milk.counts.wide.mat.clean <- arg.milk.counts.wide.mat %>% 
+  rownames_to_column(var="ARG") %>% 
+  filter(ARG %in% ARG_keep) %>% 
+  column_to_rownames("ARG") %>% 
+  as.matrix()
+
+#get sample names that will be in heatmap
+samples.heatmap <- colnames(arg.milk.counts.wide.mat.clean)
+
+metadata.bifidos <- left_join(metadata, bifido_groups, by=c("Full_name"="Sample"))
+metadata.bifidos.clean <- metadata.bifidos %>% 
+  filter(Old_sample_name %in% samples.heatmap) %>%  #extract metadata from only rows that will be in heatmap 
+  arrange(factor(Old_sample_name, levels = samples.heatmap))
+
+#*****ANNOTATION COLUMNS 
+ann <- data.frame(metadata.bifidos.clean$`Sample_type`,
+                  metadata.bifidos.clean$`Status`,
+                  metadata.bifidos.clean$`Group`)
+
+colnames(ann) <- c('Sample_type', 'Status', 'Group')
+
+colours <- list('Sample_type' = c('Milk_1M' = "#e66101", 'Milk_3M' = "#fdb863"),
+  'Status' = c('GD' = 'black', 'Healthy' = 'cornflowerblue'),
+  'Group' = c('Group_1' = '#630a4c', 'Group_2' = '#ad3691', 'Group_3' = '#de9ecd', 'Group_4' = '#f2e6ef'))
+
+colAnn <- HeatmapAnnotation(df = ann,
+  which = 'col',
+  col = colours,
+  annotation_width = unit(c(0.1, 0.1), 'cm'),
+  gap = unit(0.5, 'mm'))
+
+#*****ANNOTATION ROWS (ARG names)
+arg.heatmap <- as.data.frame(arg.milk.counts.wide.mat.clean) %>% 
+  rownames_to_column(var="name") %>% 
+  select(name)
+
+arg_file.names.small <- arg_file.names %>% 
+  select("#ARG", "predicted_ARG-class") %>% 
+  unique()
+
+b_mat_heatmap.clean.ARGnames.matadata <- left_join(arg.heatmap, arg_file.names.small, by=c("name"="#ARG"))
+
+#check corner case: genes that fall into multiple ARG classes
+#here: MDTK multidrug + fluoroquinolone -> chosen fluoroquinolone
+#and: ARNA polymyxin + peptide -> chosen peptide
+counts <- arg.milk.counts.wide.mat.clean.ARGnames.matadata %>% 
+  group_by(name) %>% 
+  summarise(n=n())
+
+#get top n classes and collapse the others under the "other" label
+top_classes <- c(arg.milk.counts.wide.mat.clean.ARGnames.matadata %>% 
+  group_by(`predicted_ARG-class`) %>% 
+  summarise(n=n()) %>% 
+  arrange(desc(n)) %>% 
+  top_n(5) %>% 
+  pull(`predicted_ARG-class`))
+  
+arg.milk.counts.wide.mat.clean.ARGnames.matadata.noMulticlass <- 
+  arg.milk.counts.wide.mat.clean.ARGnames.matadata %>% 
+  filter(!((name=="MDTK" & `predicted_ARG-class` == "multidrug") | (name=="ARNA" & `predicted_ARG-class` == "polymyxin"))) %>% 
+  mutate(class_clean = ifelse(`predicted_ARG-class` %in% top_classes, `predicted_ARG-class`, "other"))
+  
+classes <- as.data.frame(arg.milk.counts.wide.mat.clean.ARGnames.matadata.noMulticlass) %>% 
+  group_by(`predicted_ARG-class`) %>% 
+  summarise(n=n())
+
+ann2 <- data.frame(arg.milk.counts.wide.mat.clean.ARGnames.matadata.noMulticlass$class_clean)
+colnames(ann2) <- c('class_clean')
+
+rowcolours <- list(
+  'class_clean' = c('beta-lactam' = 'darkred', 'tetracycline' = 'darkorange',
+                    'peptide' = 'gold', 'MLS' = 'navy', 
+                    'aminoglycoside' = 'cornflowerblue', 'other' = 'white'))
+
+rowAnn <- rowAnnotation(df = ann2,
+  col = rowcolours,
+  annotation_width = unit(c(0.1, 0.1), 'cm'),
+  gap = unit(0.5, 'mm'))
+#end annotations
+
+row_dend = dendsort(hclust(dist(arg.milk.counts.wide.mat.clean)))
+col_dend = dendsort(hclust(dist(t(arg.milk.counts.wide.mat.clean))))
+
+col_fun = colorRamp2(c(0, 1, 10, 100, 200, 500), 
+                     c("white","#e5e8f2","#ccd1e6", "#6776b5", '#35499d', "#000000"))
+
+pdf(file=paste0("figures/ARG_analysis/heatmap_milk.pdf"), width=10, height=8)
+Heatmap(arg.milk.counts.wide.mat.clean, 
+        name = "Occurrences", 
+        clustering_distance_rows = "euclidean", 
+        clustering_distance_columns = "euclidean",
+        show_column_names = FALSE,
+        show_row_names = FALSE,
+        show_row_dend = TRUE, 
+        col = col_fun, 
+        na_col = "red",
+        row_names_gp = gpar(fontsize = 8),
+        top_annotation=colAnn,
+        left_annotation = rowAnn,
+        column_dend_height = unit(5, "mm"))
+invisible(dev.off())
+```
+
+# Identity threshold for ARGs
+```{r}
+#identity thresholds
+arg_file.clean <- arg_file.names %>% 
+  filter(identity>=95) %>% 
+  select(`1`, `#ARG`, `predicted_ARG-class`) %>% 
+  filter(`predicted_ARG-class` != "multidrug")
+
+arg_file.clean_metadata <- left_join(arg_file.clean, metadata, by=c("1"= "Correct_sample_name"))
+  
+arg_file.clean_metadata <- arg_file.clean_metadata %>% 
+  filter(Post_filtering_QC=="Keep", `predicted_ARG-class` != "unclassified") %>% 
+  select(-`1`, -Reads_filtered, -Reads_mapped, -Percent, -`Total taxa`, -Post_filtering_QC)
+```
+
+
+# ARGs prevalences statified by relevant variables:
+
+## by predominance group
+```{r}
+arg.master <- arg_file.names %>% 
+  filter(identity>=95) %>% 
+  filter(`predicted_ARG-class`!="unclassified" & `predicted_ARG-class`!="multidrug") 
+
+arg.master.groups <- left_join(arg.master, metadata.bifidos %>% select(Old_sample_name,Group, Sample_type), by=c('1'="Old_sample_name")) %>% 
+    filter(Sample_type=="Stool_1M" | Sample_type=="Stool_6M") %>% 
+    mutate(Bifido_group=ifelse(Group=="Group_4", "No", "Yes")) #combine all bifido groups vs not
+
+predom.group.master <- arg.master.groups %>% 
+  filter(!is.na(Bifido_group)) %>% 
+  group_by(Bifido_group, `1`, Sample_type) %>% 
+  summarise(counts=n())
+
+pdf(file=paste0("figures/ARG_analysis/arg_bifido_groups_boxplots.pdf"), width=4, height=2)
+ggplot(predom.group.master, aes(fill=Bifido_group, y=counts, x=Sample_type)) + 
+  geom_boxplot(outlier.size = -1) +
+  #stat_compare_means(method = "t.test") +
+  stat_compare_means(method = "t.test", label = "p.signif") +
+  scale_fill_manual(values=c('#630a4c', '#ad3691', '#de9ecd', '#f2e6ef'))+
+  theme_bw()
+invisible(dev.off())
+```
+
+## by delivery mode
+```{r}
+arg_file.names <- cbind(arg_file, names)
+
+arg.master <- arg_file.names %>% 
+  filter(identity>=95) %>% 
+  filter(`predicted_ARG-class`!="unclassified" & `predicted_ARG-class`!="multidrug")
+
+metadata.bifidos.clean.vag <- metadata.bifidos %>% 
+  mutate(Delivery_mode_vag=ifelse(Delivery_mode_cat1=="AVD" | Delivery_mode_cat1=="SVD", "Yes", "No"))  
+
+arg.master.vag <- left_join(arg.master, metadata.bifidos.clean.vag %>% select(Old_sample_name,Group, Sample_type, Delivery_mode_vag), by=c('1'="Old_sample_name"))
+
+partial1.vag <- arg.master.vag %>% 
+  mutate(class_clean=ifelse(`predicted_ARG-class` %in% top.classes, `predicted_ARG-class`, "other")) %>% 
+  filter(!is.na(Delivery_mode_vag))%>% 
+  group_by(Sample_type, Delivery_mode_vag) %>% 
+  summarise(n=n()) %>% 
+  select(Sample_type, Delivery_mode_vag, n)
+
+partial2.vag <- arg.master.vag %>% 
+  filter(!is.na(Delivery_mode_vag)) %>% 
+  mutate(class_clean=ifelse(`predicted_ARG-class` %in% top.classes, `predicted_ARG-class`, "other")) %>% 
+  group_by(Sample_type) %>% 
+  summarise(totals=n())
+
+merged.vag <- left_join(partial2.vag, partial1.vag, by="Sample_type")
+
+merged.vag <- merged.vag %>% 
+  mutate(tmp=paste0(Sample_type,"_",Delivery_mode_vag)) 
+
+nsamples <- metadata.bifidos.clean.vag %>% 
+  group_by(Sample_type, Delivery_mode_vag) %>% 
+  summarise(nsamples=n()) %>% 
+  mutate(tmp=paste0(Sample_type,"_",Delivery_mode_vag)) %>% 
+  select(-Sample_type, -Delivery_mode_vag)
+
+merged.vag.nsamples <- left_join(merged.vag, nsamples, by="tmp")
+
+merged.vag.nsamples <- merged.vag.nsamples %>% 
+  mutate(perc=n*100/totals, ratio=perc/nsamples) %>% 
+  mutate(argnsamples=n/nsamples) %>% 
+  filter(Sample_type.x=="Stool_1M"|Sample_type.x=="Stool_6M")
+
+#boxplot
+arg.perSample.vag <- arg.master.vag %>% 
+  mutate(Sample=`1`) %>% 
+  filter(!is.na(Delivery_mode_vag))%>% 
+  filter(Sample_type=="Stool_1M" | Sample_type=="Stool_6M") %>% 
+  group_by(Sample) %>% 
+  summarise(nARG_perSample=n()) 
+
+arg.master.vag.meta <- arg.master.vag %>% 
+  mutate(Sample=`1`) %>% 
+  select(Sample, Sample_type, Delivery_mode_vag, Group) 
+  
+arg.perSample.vag.meta <- left_join(arg.perSample.vag, arg.master.vag.meta, by="Sample")
+arg.perSample.vag.meta <- arg.perSample.vag.meta %>% distinct()
+
+stat_box_data <- function(y) {
+  return(data.frame(y = 0, label = paste(length(y))))
+}
+
+pdf(file=paste0("figures/ARG_analysis/arg_vag_boxplot.pdf"), width=5, height=2.5)
+ggplot(arg.perSample.vag.meta, aes(x=Sample_type, y=nARG_perSample, fill=Delivery_mode_vag)) +
+  geom_boxplot(outlier.shape=NA, position=position_dodge()) +
+  theme_bw() +
+  scale_fill_manual(values=c("#5e3c99", "#b2abd2")) +
+  coord_flip()+
+  stat_compare_means(aes(group = Delivery_mode_vag), method = "t.test") +
+  #stat_compare_means(aes(group = Delivery_mode_vag), method = "t.test", label = "p.signif") +
+  stat_summary(fun.data = stat_box_data, geom = "text", fun = median, position = position_dodge(width = 0.85), size=2)
+invisible(dev.off())
+
+#pvalues (adjusted)
+anno_df.vag = compare_means(nARG_perSample ~ Delivery_mode_vag, group.by = "Sample_type", data = arg.perSample.vag.meta, method="t.test")
+
+```
+
+## by sample type
+```{r}
+arg_file.names <- cbind(arg_file, names)
+
+arg.master <- arg_file.names %>% 
+  filter(identity>=95) %>% 
+  filter(`predicted_ARG-class`!="unclassified" & `predicted_ARG-class`!="multidrug")
+
+arg.master.metadata <- left_join(arg.master, metadata %>% select(Old_sample_name, Sample_type), by=c('1'="Old_sample_name"))
+
+#number of genes (decided to drop this plot)
+nARG_sampleType <- arg.master.metadata %>% 
+  group_by(`1`, Sample_type) %>%
+  summarise(nARG=n())
+
+#***** number of distinct ARG classes
+nARG_classes_sampleType <- arg.master.metadata %>% 
+  select(`1`, `predicted_ARG-class`, Sample_type) %>% 
+  unique() %>% 
+  group_by(`1`, Sample_type) %>% 
+  summarise(nARG_classes=n())
+
+my_comparisons <- list( c("Milk_1M", "Milk_3M"), c("Stool_1M", "Stool_6M"), c("Milk_3M", "Stool_1M") )
+
+pdf(file=paste0("figures/ARG_analysis/arg_classes_sampleType_boxplot.pdf"), width=3, height=3)
+ggplot(nARG_classes_sampleType, aes(x=Sample_type, y=nARG_classes, fill=Sample_type)) +
+  geom_boxplot(outlier.shape=NA, position=position_dodge()) +
+  theme_bw() +
+  scale_fill_manual(values=c("#e66101", "#fdb863", "#5e3c99", "#b2abd2")) +
+  stat_compare_means(comparisons = my_comparisons, label = "p.signif", method = "t.test") 
+invisible(dev.off())
+```
+
+## by antibiotic intake
+```{r}
+arg_file.names <- cbind(arg_file, names)
+
+arg.master <- arg_file.names %>% 
+  filter(identity>=95) %>% 
+  filter(`predicted_ARG-class`!="unclassified" & `predicted_ARG-class`!="multidrug")
+
+arg.master.abx <- left_join(arg.master, metadata.bifidos %>% select(Old_sample_name,Group, Sample_type, Abx_exposure_any), by=c('1'="Old_sample_name"))
+
+partial1.abx <- arg.master.abx %>% 
+  mutate(class_clean=ifelse(`predicted_ARG-class` %in% top.classes, `predicted_ARG-class`, "other")) %>% 
+  filter(!is.na(Abx_exposure_any))%>% 
+  group_by(Sample_type, Abx_exposure_any) %>% 
+  summarise(n=n()) %>% 
+  select(Sample_type, Abx_exposure_any, n)
+
+partial2.abx <- arg.master.abx %>% 
+  filter(!is.na(Abx_exposure_any)) %>% 
+  mutate(class_clean=ifelse(`predicted_ARG-class` %in% top.classes, `predicted_ARG-class`, "other")) %>% 
+  group_by(Sample_type) %>% 
+  summarise(totals=n())
+
+merged.abx <- left_join(partial2.abx, partial1.abx, by="Sample_type")
+
+merged.abx <- merged.abx %>% 
+  mutate(tmp=paste0(Sample_type,"_",Abx_exposure_any)) 
+
+nsamples <- metadata.bifidos %>% 
+  group_by(Sample_type, Abx_exposure_any) %>% 
+  summarise(nsamples=n()) %>% 
+  mutate(tmp=paste0(Sample_type,"_",Abx_exposure_any)) %>% 
+  select(-Sample_type, -Abx_exposure_any)
+
+merged.abx.nsamples <- left_join(merged.abx, nsamples, by="tmp")
+
+merged.abx.nsamples <- merged.abx.nsamples %>% 
+  mutate(perc=n*100/totals, ratio=perc/nsamples) %>% 
+  mutate(argnsamples=n/nsamples) %>% 
+  filter(Sample_type.x=="Stool_1M"|Sample_type.x=="Stool_6M")
+
+#boxplot
+arg.perSample.abx <- arg.master.abx %>% 
+  mutate(Sample=`1`) %>% 
+  filter(!is.na(Abx_exposure_any))%>% 
+  filter(Sample_type=="Stool_1M" | Sample_type=="Stool_6M") %>% 
+  group_by(Sample) %>% 
+  summarise(nARG_perSample=n()) 
+
+arg.master.abx.meta <- arg.master.abx %>% 
+  mutate(Sample=`1`) %>% 
+  select(Sample, Sample_type, Abx_exposure_any, Group) 
+  
+arg.perSample.abx.meta <- left_join(arg.perSample.abx, arg.master.abx.meta, by="Sample")
+arg.perSample.abx.meta <- arg.perSample.abx.meta %>% distinct()
+
+pdf(file=paste0("figures/ARG_analysis/arg_abx_boxplot.pdf"), width=5, height=2.5)
+ggplot(arg.perSample.abx.meta, aes(x=Sample_type, y=nARG_perSample, fill=Abx_exposure_any)) +
+  geom_boxplot(outlier.shape=NA, position=position_dodge()) +
+  theme_bw() +
+  scale_fill_manual(values=c("#5e3c99", "#b2abd2")) +
+  coord_flip()+
+  stat_compare_means(aes(group = Abx_exposure_any), label = "p.signif", method = "t.test") +
+  stat_summary(fun.data = stat_box_data, geom = "text", fun = median, position = position_dodge(width = 0.85), size=2)
+invisible(dev.off())
+
+#pvalues (adjusted)
+anno_df.abx = compare_means(nARG_perSample ~ Abx_exposure_any, group.by = "Sample_type", data = arg.perSample.abx.meta)
+```
+
+
+# ARGs carriage overview across sample types
+```{r}
+occurrences <- arg_file.clean_metadata %>% 
+  group_by(Sample_type, `predicted_ARG-class`) %>% 
+  summarise(n=n()) 
+
+totals <- arg_file.clean_metadata %>% 
+  group_by(Sample_type) %>% 
+  summarise(tot=n())
+
+arg.merged <- left_join(occurrences, totals, by=c("Sample_type"))
+  
+arg.merged.perc <- arg.merged %>%
+  mutate(perc=n*100/tot)
+
+#MILK 1M
+arg.merged.perc.M1M.classes <- arg.merged.perc %>%
+  filter(Sample_type=="Milk_1M" & perc>3) %>% 
+  select(Sample_type, `predicted_ARG-class`, perc)
+
+valueM1M <- as.double(arg.merged.perc %>% 
+  filter(Sample_type=="Milk_1M") %>% 
+  filter(perc<3) %>% 
+  summarise(sum=sum(perc)) %>% 
+  select(sum) %>% pull(sum))
+
+df2<-data.frame("Milk_1M","Other", valueM1M)
+names(df2)<-c("Sample_type","predicted_ARG-class", "perc")
+
+M1M <- rbind(arg.merged.perc.M1M.classes, df2)
+
+#MILK 3M
+arg.merged.perc.M3M.classes <- arg.merged.perc %>%
+  filter(Sample_type=="Milk_3M" & perc>3) %>% 
+  select(Sample_type, `predicted_ARG-class`, perc)
+
+valueM3M <- as.double(arg.merged.perc %>% 
+  filter(Sample_type=="Milk_3M") %>% 
+  filter(perc<3) %>% 
+  summarise(sum=sum(perc)) %>% 
+  select(sum) %>% pull(sum))
+
+df3<-data.frame("Milk_3M","Other", valueM3M)
+names(df3)<-c("Sample_type","predicted_ARG-class", "perc")
+
+M3M <- rbind(arg.merged.perc.M3M.classes, df3)
+
+#STOOL 1M
+arg.merged.perc.S1M.classes <- arg.merged.perc %>%
+  filter(Sample_type=="Stool_1M" & perc>3) %>% 
+  select(Sample_type, `predicted_ARG-class`, perc)
+
+valueS1M <- as.double(arg.merged.perc %>% 
+  filter(Sample_type=="Stool_1M") %>% 
+  filter(perc<3) %>% 
+  summarise(sum=sum(perc)) %>% 
+  select(sum) %>% pull(sum))
+
+df4<-data.frame("Stool_1M","Other", valueS1M)
+names(df4)<-c("Sample_type","predicted_ARG-class", "perc")
+
+S1M <- rbind(arg.merged.perc.S1M.classes, df4)
+
+#STOOL 6M
+arg.merged.perc.S6M.classes <- arg.merged.perc %>%
+  filter(Sample_type=="Stool_6M" & perc>3) %>% 
+  select(Sample_type, `predicted_ARG-class`, perc)
+
+valueS6M <- as.double(arg.merged.perc %>% 
+  filter(Sample_type=="Stool_6M") %>% 
+  filter(perc<3) %>% 
+  summarise(sum=sum(perc)) %>% 
+  select(sum) %>% pull(sum))
+
+df5<-data.frame("Stool_6M","Other", valueS6M)
+names(df5)<-c("Sample_type","predicted_ARG-class", "perc")
+
+S6M <- rbind(arg.merged.perc.S6M.classes, df5)
+
+arg.sampleTypes.all <- rbind(M1M, M3M, S1M, S6M)
+arg.sampleTypes.all$perc <- as.numeric(arg.sampleTypes.all$perc)
+
+M1M.tmp <- M1M %>% 
+  mutate_if(is.numeric, ~round(., 0)) %>% 
+  group_by(Sample_type) %>% 
+  mutate(sum=sum(perc))
+
+M3M.tmp <- M3M %>% 
+  mutate_if(is.numeric, ~round(., 0)) %>% 
+  group_by(Sample_type) %>% 
+  mutate(sum=sum(perc))
+
+S1M.tmp <- S1M %>% 
+  mutate_if(is.numeric, ~round(., 0)) %>% 
+  group_by(Sample_type) %>% 
+  mutate(sum=sum(perc))
+
+S6M.tmp <- S6M %>% 
+  mutate_if(is.numeric, ~round(., 0)) %>% 
+  group_by(Sample_type) %>% 
+  mutate(sum=sum(perc))
+
+pdf(file=paste0("figures/ARG_analysis/arg_overview.pdf"), width=6, height=2.5)
+  ggplot(arg.sampleTypes.all.rounded, aes(x = Sample_type, y = perc, fill = `predicted_ARG-class`, label=perc)) + 
+    geom_bar(stat = "identity", colour="white")+
+    theme_bw()+
+    coord_flip()+
+    geom_text(size = 3, position = position_stack(vjust = 0.5))+
+    scale_fill_manual(values = c("#D45500", "#FF7F2A", "#FFB280", "#FFCC00","#89A02C","#BCD35F","#87DECD","#D5E5FF","#80B3FF","#3671C8","#162D50"))
+invisible(dev.off())
+```
+
+# Correlation between ARGs in milk vs stool or stools 1M vs 6M
+
+## Milk samples vs stool samples
+```{r}
+bothBodysites <- arg_file.clean_metadata %>% 
+  select(Bodysite, `Mother Infant Pair`, `predicted_ARG-class`) %>% 
+  group_by(Bodysite, `Mother Infant Pair`, `predicted_ARG-class`) %>% 
+  distinct() %>% 
+  group_by(`Mother Infant Pair`, `predicted_ARG-class`) %>% 
+  summarise(n=n()) %>% 
+  filter(n>1)
+
+bothBodysites_couple <- c(bothBodysites %>% 
+  pull(`Mother Infant Pair`))
+
+bothBodysites_class <- c(bothBodysites %>% 
+  pull(`predicted_ARG-class`))
+
+bothBodysites_class_top <- arg_file.clean_metadata %>% 
+  group_by(`predicted_ARG-class`) %>% 
+  summarise(n=n()) %>% 
+  top_n(5) %>% 
+  pull(`predicted_ARG-class`)
+
+arg.classes.couple <- arg_file.clean_metadata %>% 
+  filter((`Mother Infant Pair` %in% bothBodysites_couple) &
+           (`predicted_ARG-class` %in% bothBodysites_class) &
+           (`predicted_ARG-class` %in% bothBodysites_class_top)) %>% 
+  #filter(`Mother Infant Pair`!= "Mother_Infant_Pair_1" & `Mother Infant Pair`!= "Mother_Infant_Pair_3") %>%
+  group_by(Bodysite, `Mother Infant Pair`, `predicted_ARG-class`) %>% 
+  summarise(n=n()) 
+
+arg.classes.couple.wide <- arg.classes.couple %>% 
+  pivot_wider(names_from = "Bodysite", 
+              values_from = "n")
+
+corr1 <- ggplot(data = arg.classes.couple.wide, mapping = aes(x = Stool, y = Milk)) +
+  geom_point(shape = 21, fill = 'grey55', alpha=0.5, color = 'black', size = 1.8) +
+  theme_bw() +
+  sm_statCorr(color = 'black', corr_method = 'spearman', linetype = 'dashed')
+```
+
+## Stool samples at 1 month vs those at 6 months of age
+```{r}
+bothTimepoints <- arg_file.clean_metadata %>% 
+  filter(Bodysite=="Stool") %>% 
+  select(Sample_type, `Mother Infant Pair`, `predicted_ARG-class`) %>% 
+  group_by(Sample_type, `Mother Infant Pair`, `predicted_ARG-class`) %>% 
+  distinct() %>% 
+  group_by(`Mother Infant Pair`, `predicted_ARG-class`) %>% 
+  summarise(n=n()) %>% 
+  filter(n>1)
+
+bothTimepoints_longitudinal <- c(bothTimepoints %>% 
+  pull(`Mother Infant Pair`))
+
+bothTimepoints_class <- c(bothTimepoints %>% 
+  pull(`predicted_ARG-class`))
+
+bothTimepoints_class_top <- arg_file.clean_metadata %>% 
+  filter(Bodysite=="Stool") %>% 
+  group_by(`predicted_ARG-class`) %>% 
+  summarise(n=n()) %>% 
+  top_n(15) %>% 
+  pull(`predicted_ARG-class`)
+
+arg.classes.longitudinal <- arg_file.clean_metadata %>% 
+  filter(Bodysite=="Stool") %>% 
+     filter((`Mother Infant Pair` %in% bothTimepoints_longitudinal) & 
+            (`predicted_ARG-class` %in% bothTimepoints_class) &
+            (`predicted_ARG-class` %in% bothTimepoints_class_top)) %>% 
+  group_by(Sample_type, `Mother Infant Pair`, `predicted_ARG-class`) %>% 
+  summarise(n=n()) 
+
+arg.classes.longitudinal.wide <- arg.classes.longitudinal %>% 
+  pivot_wider(names_from = "Sample_type", 
+              values_from = "n")
+
+corr2 <- ggplot(data = arg.classes.longitudinal.wide, mapping = aes(x = Stool_1M, y = Stool_6M)) +
+  geom_point(shape = 21, fill = 'grey55', alpha=0.5, color = 'black', size = 1.8) +
+  theme_bw() +
+  sm_statCorr(color = 'black', corr_method = 'spearman', linetype = 'dashed')
+
+#get exact pvalues with cor.test()
+res <- cor.test(arg.classes.longitudinal.wide$Stool_1M, arg.classes.longitudinal.wide$Stool_6M, 
+                    method = "spearman")
+res$p.value
+res$estimate
+
+#combine plots
+pdf(file=paste0("figures/ARG_analysis/corr_all.pdf"), width=5, height=2.3)
+ggarrange(corr1, corr2, labels = c("C", "D"), widths = c(1,1.1), align = "h", nrow = 1)
+invisible(dev.off())
+```
+
+
