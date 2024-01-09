@@ -28,49 +28,6 @@ my_metadata <- read_delim("data/metadata_complete.csv", delim = ',')
 bifidos_rel_abs_mean <- read_delim("data/predominance_group/bifidos_relabs_mean.csv", delim = ',')
 ```
 
-# Statistics on reads for milk and stool samples
-
-```{r}
-width_size=5
-height_size=3
-
-#mean values and sd
-my_metadata %>% 
-  group_by(Bodysite) %>% 
-  summarise(
-    mean = mean(Reads_filtered, na.rm = T),
-    sd = sd(Reads_filtered, na.rm = T)
-  )
-```
-
-## Milk samples only
-```{r}
-#milk samples only
-pdf(file=paste0("figures/metadata_stats/filtered_reads_distribution_MilkOnly.pdf"), width=width_size, height=height_size)
-ggplot(my_metadata %>% filter(Bodysite=="Milk"), aes(x=Reads_filtered, color=Sample_type, fill=Sample_type)) +
-  geom_density(alpha=0.3) +
-  theme_light() + 
-  xlim(0, 18000000)+
-  scale_color_manual(values=c("#e66101", "#fdb863")) +
-  scale_fill_manual(values=c("#e66101", "#fdb863")) +
-      theme(axis.text=element_text(size=13),
-        axis.title=element_text(size=12))
-invisible(dev.off())
-```
-
-## Stool samples only
-```{r}
-pdf(file=paste0("figures/metadata_stats/filtered_reads_distribution_StoolOnly.pdf"), width=width_size, height=height_size)
-ggplot(my_metadata %>% filter(Bodysite=="Stool"), aes(x=Reads_filtered, color=Sample_type, fill=Sample_type)) +
-  geom_density(alpha=0.3) +
-  theme_light() + 
-  scale_color_manual(values=c("#5e3c99", "#b2abd2")) +
-  scale_fill_manual(values=c("#5e3c99", "#b2abd2")) +
-    theme(axis.text=element_text(size=13),
-        axis.title=element_text(size=12))
-invisible(dev.off())
-```
-
 # PCoA plots
 
 ## By sample type
