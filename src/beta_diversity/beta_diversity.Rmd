@@ -46,7 +46,7 @@ my_metadata %>%
 ## Milk samples only
 ```{r}
 #milk samples only
-pdf(file=paste0("figures/filtered_reads_distribution_MilkOnly.pdf"), width=width_size, height=height_size)
+pdf(file=paste0("figures/metadata_stats/filtered_reads_distribution_MilkOnly.pdf"), width=width_size, height=height_size)
 ggplot(my_metadata %>% filter(Bodysite=="Milk"), aes(x=Reads_filtered, color=Sample_type, fill=Sample_type)) +
   geom_density(alpha=0.3) +
   theme_light() + 
@@ -60,7 +60,7 @@ invisible(dev.off())
 
 ## Stool samples only
 ```{r}
-pdf(file=paste0("figures/filtered_reads_distribution_StoolOnly.pdf"), width=width_size, height=height_size)
+pdf(file=paste0("figures/metadata_stats/filtered_reads_distribution_StoolOnly.pdf"), width=width_size, height=height_size)
 ggplot(my_metadata %>% filter(Bodysite=="Stool"), aes(x=Reads_filtered, color=Sample_type, fill=Sample_type)) +
   geom_density(alpha=0.3) +
   theme_light() + 
@@ -117,7 +117,7 @@ pcoa_t_meta.all.clean.plot <- ggplot(pcoa_t_meta.all.clean, aes(x = PC1, y = PC2
   scale_color_manual(values=c("#e66101", "#fdb863", "#5e3c99", "#b2abd2")) +
   theme(legend.position="bottom")
 
-pdf(file=paste0("figures/PCoA_sample_type.pdf"), width=6, height=4)
+pdf(file=paste0("figures/beta_diversity/PCoA_sample_type.pdf"), width=6, height=4)
 pcoa_t_meta.all.clean.plot
 invisible(dev.off())
 
@@ -140,7 +140,7 @@ pcoa_t_meta.all.bifidos_mean.clean.plot <- ggplot(pcoa_t_meta.all.bifidos_mean.c
   scale_colour_viridis(option="magma", na.value = "#ffeebf", limits=c(0,40))
   #theme(legend.position="bottom")
 
-pdf(file=paste0("figures/PCoA_mean_bifidos_relab_all.pdf"), width=4.5, height=3)
+pdf(file=paste0("figures/beta_diversity/PCoA_mean_bifidos_relab_all.pdf"), width=4.5, height=3)
 pcoa_t_meta.all.bifidos_mean.clean.plot
 invisible(dev.off())
 
@@ -155,7 +155,7 @@ timepoint.stool.plot <- ggplot(pcoa_t_meta.all.clean %>% filter(Bodysite=="Stool
   scale_color_manual(values=c("navy", "darkorange2"))+
   theme(legend.position="bottom")
 
-pdf(file=paste0("figures/PCoA_timepoint.pdf"), width=width_size, height=height_size)
+pdf(file=paste0("figures/beta_diversity/PCoA_timepoint.pdf"), width=width_size, height=height_size)
 timepoint.stool.plot
 invisible(dev.off())
 
@@ -170,7 +170,7 @@ prenatal.abx.plot <- ggplot(pcoa_t_meta.all.clean, aes(x = PC1, y = PC2, color =
   scale_color_manual(values=c("darkorange2", "black"))+
   theme(legend.position="bottom")
 
-pdf(file=paste0("figures/PCoA_prenatal_abx.pdf"), width=width_size, height=height_size)
+pdf(file=paste0("figures/beta_diversity/PCoA_prenatal_abx.pdf"), width=width_size, height=height_size)
 prenatal.abx.plot
 invisible(dev.off())
 
@@ -186,7 +186,7 @@ abx.any.plot <- ggplot(pcoa_t_meta.all.clean %>% filter(Bodysite=="Stool"), aes(
   scale_color_manual(values=c("darkorange2", "black"))+
   theme(legend.position="bottom")
 
-pdf(file=paste0("figures/PCoA_abx_any.pdf"), width=width_size, height=height_size)
+pdf(file=paste0("figures/beta_diversity/PCoA_abx_any.pdf"), width=width_size, height=height_size)
 abx.any.plot
 invisible(dev.off())
 
@@ -207,7 +207,7 @@ delivery.mode.clean.plot <- ggplot(delivery.mode.clean, aes(x = PC1, y = PC2, co
   scale_color_manual(values=c("darkorange2", "black"))+
   theme(legend.position="bottom")
 
-pdf(file=paste0("figures/PCoA_delivery_mode.pdf"), width=5, height=height_size)
+pdf(file=paste0("figures/beta_diversity/PCoA_delivery_mode.pdf"), width=5, height=height_size)
 delivery.mode.clean.plot
 invisible(dev.off())
 
@@ -223,7 +223,7 @@ hospital.plot <- ggplot(pcoa_t_meta.all.clean %>% filter(!is.na(Place_birth)), a
                                        "violetred2","red","darkorange","gold", "navy"))+
   theme(legend.position="bottom")
 
-pdf(file=paste0("figures/PCoA_hospital.pdf"), width=6, height=height_size)
+pdf(file=paste0("figures/beta_diversity/PCoA_hospital.pdf"), width=6, height=height_size)
 hospital.plot
 invisible(dev.off())
 
@@ -238,7 +238,7 @@ excl.bf.6m.plot <- ggplot(pcoa_t_meta.all.clean %>% filter(Bodysite=="Stool"), a
   scale_color_manual(values=c("darkorange2", "black"))+
   theme(legend.position="bottom")
 
-pdf(file=paste0("figures/PCoA_exc_bf_6m.pdf"), width=width_size, height=height_size)
+pdf(file=paste0("figures/beta_diversity/PCoA_exc_bf_6m.pdf"), width=width_size, height=height_size)
 excl.bf.6m.plot
 invisible(dev.off())
 
@@ -249,7 +249,7 @@ excl.bf.6m.plot
 ```{r}
 panel <- plot_grid(cum.rel.ab.bifiods.plot, delivery.mode.clean.plot,excl.bf.6m.plot, timepoint.stool.plot, abx.any.plot, hospital.plot, labels = "auto", ncol=2)
 
-pdf(file=paste0("figures/cum_bifidos_relab.pdf"), width=8, height=10)
+pdf(file=paste0("figures/beta_diversity/cum_bifidos_relab.pdf"), width=8, height=10)
 panel
 dev.off()
 
@@ -319,7 +319,7 @@ pcoa.labels.plot <- ggplot(pcoa_t_meta.all.clean, aes(x = PC1, y = PC2, color = 
                   color = "black", 
                   size = 5)
 
-pdf(file=paste0("figures/PCoA_biplot_species.pdf"), width=5.1, height=height_size)
+pdf(file=paste0("figures/beta_diversity/PCoA_biplot_species.pdf"), width=5.1, height=height_size)
 pcoa.labels.plot
 invisible(dev.off())
 
