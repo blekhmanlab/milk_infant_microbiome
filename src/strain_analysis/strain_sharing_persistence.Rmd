@@ -1,0 +1,109 @@
+---
+title: "Strain persistence in infants at 1 month and 6 months post-partum"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message=FALSE)
+options(stringsAsFactors = FALSE)
+```
+
+#Prepare environment.
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(gridExtra)
+library(stringr)
+```
+
+#Load tables
+```{r}
+#strains table
+strain_file <- read_delim("data/strains/strain_x_sample.csv", delim = ',')
+#species table
+mpa_file <- read_delim("data/species_composition/milk_infant_rel_abundance_contam_rm_keepOnly.txt", delim = '\t')
+#metadata
+metadata <- read_delim("data/metadata.csv", delim = ',')
+```
+
+
+#iterate over every strain and infant longitudinal samples (1M and 6M) only if both were sampled
+```{r}
+strain_file.samples <- colnames(strain_file)
+
+bothTimePoints.couple <- c(metadata %>%
+  filter(Bodysite=="Stool") %>% 
+  group_by(`Mother Infant Pair`) %>% 
+  summarise(n_timepoints = n()) %>% 
+  filter(n_timepoints>1) %>% 
+  pull(`Mother Infant Pair`))
+  
+#only stool samples at 1Mto see if there is strain sharing within the hospital
+stool.1M <- c(metadata %>% 
+  filter(Sample_type=="Stool_1M" & `Mother Infant Pair` %in% bothTimePoints.couple) %>% 
+  pull(Old_sample_name))
+  
+stool.6M <- c(metadata %>% 
+  filter(Sample_type=="Stool_6M" & `Mother Infant Pair` %in% bothTimePoints.couple) %>% 
+  pull(Old_sample_name))
+
+strain.list <- strain_file %>% 
+  pull(Strain_name)
+
+#empty df for results collection
+infants_loop <- data.frame()
+
+#create sampleID - coupleID
+Old_sample_name <- metadata$Old_sample_name
+`Mother Infant Pair` <- metadata$`Mother Infant Pair`
+df <- data.frame(Old_sample_name, `Mother Infant Pair`) 
+
+
+for (strain in strain.list) {
+  for (i in seq(from = 1, by = 1, length.out = 146)) {
+  
+    strain_file.small <- strain_file %>%
+      filter(Strain_name==strain) %>% 
+      select(stool.1M[i], stool.6M[i])
+    
+    timepoint1_presence <- pull(strain_file.small[1]) #1M
+    timepoint2_presence <- pull(strain_file.small[1]) #6M
+              
+    infants_loop <- rbind(
+      infants_loop,
+      data.frame(
+        sample1 = stool.1M[i],
+        sample2 = stool.6M[i],
+        strain=strain,
+        present_1M6M = ifelse(timepoint1_presence==1 & timepoint2_presence==1, "1", "0"),
+        present_1M = ifelse(timepoint1_presence==1, "1", "0"),
+        present_6M = ifelse(timepoint2_presence==1, "1", "0")))
+  
+  }
+  print(strain)
+}
+```
+
+## Add species metadata
+```{r}
+#separate full clade name into taxonomic levels
+mpa_file.delim <- mpa_file %>% 
+  tidyr::separate(clade_name, c('Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Strain'), sep ='\\|', remove = FALSE, fill="right") 
+
+mpa_file.delim.clean <- mpa_file.delim %>% 
+  select(Species, Strain) %>% 
+  filter(!is.na(Strain))
+
+mpa_file.delim.clean$Species <- str_remove(mpa_file.delim.clean$Species, pattern = "s__")
+mpa_file.delim.clean$Strain <- str_remove(mpa_file.delim.clean$Strain, pattern = "t__")
+infants_loop.speciesNames <- left_join(infants_loop, mpa_file.delim.clean, by=c("strain"="Strain"))
+
+infants_loop.speciesNames.clean <- infants_loop.speciesNames %>% 
+  filter(present_1M=="1" | present_6M=="1")
+
+#save results as suppl. table
+write.csv(infants_loop.speciesNames.clean, "STable4.csv") 
+```
+
+
