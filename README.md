@@ -15,9 +15,7 @@ For more information on the tools used and their references, please check the Me
 ## Requirements
 
 This project requires R version 4.2    
-To install all the required packages you can run:
-
-`Rscript requirements.R`
+The required packages are indicated at the beginning of each script
 
 ## Workflow
 
