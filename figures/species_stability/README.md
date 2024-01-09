@@ -1,2 +1,2 @@
-This folder will contain the figures resulting from the analysis on longitudinal species stability in milk and stool samples.
+This folder will contain the figures on longitudinal species stability analysis in milk and stool samples.
 
