@@ -1,0 +1,258 @@
+---
+title: "Species stability over time divided by target species, mother-infant couples and predominance groups"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message=FALSE)
+options(stringsAsFactors = FALSE)
+```
+
+## Prepare environment
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(gridExtra)
+library("grid")
+library(data.table)
+```
+
+## Load and manipulate metaphlan output
+```{r}
+#metaphlan output table
+mpa_file <- read_delim("data/species_composition/milk_infant_rel_abundance_contam_rm_keepOnly.txt", delim = '\t')
+#metadata file
+metadata <- read_delim("data/metadata.csv", delim = ',')
+#predominance group file
+bifido_groups <- read_delim("data/predominance_group/bifidos_groups.csv", delim = ',')
+```
+
+## Extract species information
+```{r}
+#separate full clade name into taxonomic levels
+mpa_file.delim <- mpa_file %>% 
+  tidyr::separate(clade_name, c('Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Strain'), sep ='\\|', remove = FALSE, fill="right") 
+
+#select clades assigned to species level
+mpa_file.clean.species <- mpa_file.delim %>% 
+  filter(!is.na(Species) & is.na(Strain)) 
+
+#keep simplified species name only
+to.drop <- c("clade_name", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Strain")
+mpa_file.species = mpa_file.clean.species[,!(names(mpa_file.clean.species) %in% to.drop)]
+mpa_file.species$Species <- str_remove(mpa_file.species$Species, pattern = "s__")
+mpa_file.species$Species <- gsub("_", " ", mpa_file.species$Species)
+
+mpa_file.species.long <- mpa_file.species %>% 
+  pivot_longer(cols = !Species, names_to = "Sample", values_to = "Abundance") 
+
+#split sample ID for later merge with metadata table
+mpa_file.species.long <- mpa_file.species.long %>% 
+  mutate(full_ID=Sample) %>% 
+  tidyr::separate(Sample, c('Sample', 'number'), sep ='_', remove = FALSE, fill="right")
+```
+
+#merge with metadata and predominance group information
+```{r}
+#metadata table
+metadata <- metadata %>% select(-Correct_sample_name) 
+
+#load and predominance groups information
+metadata.full <- left_join(metadata, bifido_groups, by=c("Old_sample_name"="Sample"))
+
+#merge with metadata table
+merged.species <- left_join(mpa_file.species.long, metadata.full, by=c("Sample"="Old_sample_name"))
+merged.species.clean <- merged.species %>% 
+   select(Species, Sample, Abundance, Sample_type, `Mother Infant Pair`, Bodysite, Group) %>% 
+  filter(Abundance>0) %>% 
+  distinct()
+```
+
+# Species specific longitudinal abundances trajectories (suppl. figure 4B)
+
+## Milk paired boxplot
+```{r}
+milk.to.milk.species <- merged.species.clean %>% 
+  filter(Sample_type=="Milk_1M" |Sample_type=="Milk_3M") %>% 
+  mutate(Timepoint = ifelse(Sample_type=="Milk_1M", "1", "3")) %>% 
+  group_by(Species, `Mother Infant Pair`) %>% 
+  mutate(n=n()) %>% 
+  mutate(route="Milk2Milk") %>% 
+  filter(n>1) #both stool samples present 
+
+counts.species.milk <- milk.to.milk.species %>%
+  group_by(Species) %>%
+  mutate(n_tmp=n()) %>% 
+  select(Species, n_tmp) %>% 
+  distinct() 
+
+top.5species.milk <- tmp.species.milk[order(desc(counts.species.milk$n_tmp)),] %>% 
+  head(n=5) %>% 
+  pull(Species)
+
+milk.to.milk.species.top5 <- milk.to.milk.species %>% 
+  filter(Species %in% top.5species.milk)
+
+milk.pairedTrajectories <- ggplot(milk.to.milk.species.top5, aes(x=Sample_type, y=Abundance, fill=Sample_type)) +
+  geom_boxplot() +
+  geom_point()+
+  theme_bw() +
+  facet_wrap(~Species, ncol = 5) +
+  geom_line(aes(group = `Mother Infant Pair`), size=0.5, color='gray40', alpha=0.3)+
+  geom_point(aes(fill=Sample_type, group=`Mother Infant Pair`),size=1,shape=21)+
+  scale_fill_manual(values=c("#e66101", "#fdb863")) 
+
+pdf(file=paste0("figures/species_stability/pairedDots_boxplots_top5milk.pdf"), width=8, height=3)
+milk.pairedTrajectories
+invisible(dev.off())
+
+milk.pairedTrajectories
+```
+
+## Stool paired boxplot
+```{r}
+
+stool.to.stool.species <- merged.species.clean %>% 
+  filter(Sample_type=="Stool_1M" |Sample_type=="Stool_6M") %>% 
+  mutate(Timepoint= ifelse(Sample_type=="Stool_1M", "1", "6")) %>% 
+  group_by(Species, `Mother Infant Pair`) %>% 
+  mutate(n=n()) %>% 
+  mutate(route="Stool2Stool") %>% 
+  filter(n>1) %>% #both stool samples present 
+  filter(Abundance<100) #avoid problematic samples with only one species detected
+
+counts.species.stool <- stool.to.stool.species %>%
+  group_by(Species) %>%
+  mutate(n_tmp=n()) %>% 
+  select(Species, n_tmp) %>% 
+  distinct() 
+
+#top 10 most prevalent species across, present in both timepoints
+top.10species.stool <- counts.species.stool[order(desc(counts.species.stool$n_tmp)),] %>% 
+  head(n=10) %>% 
+  pull(Species)
+
+stool.to.stool.species.top10 <-stool.to.stool.species %>% 
+  filter(Species %in% top.10species.stool)
+
+stool.pairedTrajectories <- ggplot(stool.to.stool.species.top10, aes(x=Sample_type, y=Abundance, fill=Sample_type)) +
+  geom_boxplot() +
+  geom_point()+
+  theme_bw() +
+  facet_wrap(~Species, ncol = 5) +
+  geom_line(aes(group = `Mother Infant Pair`), size=0.5, color='gray40', alpha=0.3)+
+  geom_point(aes(fill=Sample_type, group=`Mother Infant Pair`),size=1,shape=21)+
+  scale_fill_manual(values=c("#5e3c99", "#b2abd2")) 
+
+pdf(file=paste0("figures/species_stability/pairedDots_boxplots_top10stool.pdf"), width=8, height=6)
+stool.pairedTrajectories
+invisible(dev.off())
+
+stool.pairedTrajectories
+```
+
+## species stability in infants stool divided by predominance groups
+```{r}
+#get milk samples only from timeseries that have both timepoints
+couples_bothStool <- c(merged.species.clean %>% 
+  filter(Bodysite=="Stool") %>% 
+  select(`Mother Infant Pair`, Sample_type) %>% 
+  distinct()%>% 
+  group_by(`Mother Infant Pair`) %>% 
+  summarise(n=n()) %>% 
+  filter(n==2) %>% 
+  pull(`Mother Infant Pair`))
+
+merged.species.clean.stool <- merged.species.clean %>%
+  filter(Bodysite=="Stool") %>% 
+  filter(`Mother Infant Pair` %in% couples_bothStool) 
+
+#species present in both milk timepoints
+species.bothTimepoints.stool <- c(merged.species.clean.stool %>% 
+  select(Species, Sample_type) %>%
+  distinct() %>% 
+  group_by(Species) %>% 
+  summarise(nbodysites=n()) %>% 
+  filter(nbodysites==2) %>% 
+    pull(Species))
+
+#top 10 most prevalent species among those present in both timepoints in milk
+merged.species.clean.stool.counts <- merged.species.clean.stool %>% 
+  filter(Species %in% species.bothTimepoints.stool) %>% 
+  group_by(Species) %>% 
+  summarise(n=n())
+  
+top.species.stool <- merged.species.clean.stool.counts[order(desc(merged.species.clean.stool.counts$n)),] %>% 
+  head(n=20) %>% 
+  pull(Species)
+
+abundance.topSpecies.stool <- merged.species.clean.stool %>% 
+    filter(Species %in% top.species.stool) 
+
+#get predominance groups transitions over time
+couples.groups <- merged.species.clean.stool %>%
+  filter(Bodysite=="Stool") %>% 
+  select(Sample_type, `Mother Infant Pair`, Group) %>% 
+  unique()
+
+#iterate over mother-infant couples
+collect.results.couples.groups <- data.frame()
+
+for (i in couples_bothStool){
+
+  couple.clean <- couples.groups %>% 
+    filter(`Mother Infant Pair`== i) %>% 
+    mutate(Timepoint= ifelse(Sample_type=="Stool_1M", "1", "6")) 
+  
+  couple.clean <- couple.clean[order(couple.clean$Timepoint),]
+  couple.cleangroups <- c(couple.clean$Group)
+  
+  transition = paste0(couple.cleangroups[1],"-", couple.cleangroups[2])
+  
+  collect.results.couples.groups <- rbind(
+        collect.results.couples.groups,
+        data.frame(`Mother Infant Pair` = i, Transition = transition, Bodysite = "Stool")
+      )
+}
+
+#get groups transitions that have at least 10 samples in it
+transitions.toKeep.stool <- c(collect.results.couples.groups %>% 
+  group_by(Transition) %>% 
+  summarise(n=n()) %>% 
+  filter(n>10) %>% 
+  pull(Transition))
+
+abundance.topSpecies.stool <- merged.species.clean.stool %>% 
+    filter(Species %in% top.species.stool) 
+
+abundance.topSpecies.stool.transitions <- left_join(abundance.topSpecies.stool, collect.results.couples.groups, by=c(`Mother Infant Pair`="Mother.Infant.Pair"))
+
+abundance.topSpecies.stool.groupsFiltered <- abundance.topSpecies.stool.transitions %>% 
+  filter(Transition %in% transitions.toKeep.stool) %>% 
+  mutate(Timepoint = ifelse(Sample_type=="Stool_1M", "1", "6")) %>% 
+  group_by(Timepoint, Species, Transition) %>% 
+  summarise(mean_rel_abs=mean(Abundance)) %>% 
+  ungroup() %>% 
+  group_by(Timepoint, Transition) %>% 
+  mutate(total_rel_abs = sum(mean_rel_abs),
+         percentage = mean_rel_abs*100/total_rel_abs)
+
+abundance.topSpecies.stool.groupsFiltered <- abundance.topSpecies.stool.groupsFiltered %>% 
+  select(Species, Timepoint, percentage, Transition)
+
+abundance.topSpecies.stool.groupsFiltered$Timepoint <- as.numeric(abundance.topSpecies.stool.groupsFiltered$Timepoint)
+
+custom.stool4 <- c("#E57373", "#EC407A", "#D816B0", "#AB47BC", "#8E24AA", "#7E57C2", "#5E35B1", "#5C6BC0", "#3949AB", "#1A237E", "black", "white", "red", "blue", "green")
+
+bf.stability.plot.stool <- ggplot(abundance.topSpecies.stool.groupsFiltered, aes(x=Timepoint, y=percentage, fill=Species)) + 
+   geom_area(position = 'stack', alpha=0.9, size=.5, colour="black")+
+   theme_light() +
+   scale_fill_manual(values=rev(custom.stool4)) +
+   facet_grid(~Transition)
+
+pdf(file=paste0("figures/species_stability/breastfeeding_stool_stability.pdf"), width=9, height=4)
+bf.stability.plot.stool
+invisible(dev.off())
+```
+
