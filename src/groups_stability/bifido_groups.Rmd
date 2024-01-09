@@ -27,7 +27,7 @@ library(rstatix)
 #metaphlan output table
 mpa_file <- read_delim("data/species_composition/milk_infant_samples_merged_abundance_contam_rm.txt", delim = '\t')
 #metadata table
-metadata <- read_delim("data/metadata_complete.csv", delim = ',')
+metadata <- read_delim("data/metadata.csv", delim = ',')
 metadata <- metadata %>% select(-Correct_sample_name) 
 ```
 
