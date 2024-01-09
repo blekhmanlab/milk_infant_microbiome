@@ -1,0 +1,237 @@
+---
+title: "Heatmaps of metabolic pathways"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message=FALSE)
+options(stringsAsFactors = FALSE)
+```
+
+#Prepare environment.
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(gridExtra)
+library("ggdendro")
+library(stringr)
+library(viridis)
+library(hrbrthemes)
+library(circlize)
+library(devtools)
+library(ComplexHeatmap)
+library(dendsort)
+```
+
+#Load tables
+```{r}
+#humann results
+humann_all <- read_delim("data/functional_profiling/milk_infant_relab_pathabundance_UNFILTERED.tsv", delim = '\t')
+#metadata
+metadata.milk <- read_delim("data/metadata_MilkOnly.csv", delim = ',')
+metadata.stool <- read_delim("data/metadata_StoolOnly.csv", delim = ',')
+#predominance groups
+bifido.groups <- read_delim("data/predominance_group/bifidos_groups.csv", delim = ',')
+```
+
+#Clean humann table
+```{r}
+humann_all.clean <- humann_all %>% 
+  filter(!grepl('UNMAPPED|UNINTEGRATED', Pathway)) %>% 
+  tidyr::separate(Pathway, c('Pathway_ID', 'Pathway_description'), sep ='\\: ', remove = FALSE, fill="right") %>%
+  tidyr::separate(Pathway_description, c('Pathway_description_clean', 'Taxonomy'), sep ='\\|', remove = FALSE, fill="right") %>%
+  filter(!is.na(Pathway_description_clean) & is.na(Taxonomy)) %>% 
+  select(-Pathway_ID, -Pathway, -Taxonomy, -Pathway_description)
+
+#transpose to filter samples as rows
+humann_all.clean.t <- as.data.frame(t(humann_all.clean))
+humann_all.clean.t$Samples <- rownames(humann_all.clean.t)
+```
+
+# Heatmap of functional pathways
+
+## Milk samples
+```{r}
+metadata.milk.groups <- left_join(metadata.milk, bifido.groups, by=c("clade_name"="Sample"))
+
+metadata.milk.clean <- metadata.milk.groups %>%
+  filter(!is.na(clade_name)) %>% 
+  filter(Keep!="Discard")
+  
+list.milk.keep <- c(metadata.milk.clean %>% 
+  pull(clade_name))
+
+humann.milk.keep <- humann_all.clean.t %>%  
+  filter(Samples %in% list.milk.keep | Samples == "Pathway_description_clean") %>% 
+  select(-Samples)
+
+#transpose back (samples as cols)
+humann.milk.keep <- as.data.frame(t(humann.milk.keep))
+rownames(humann.milk.keep) <- humann.milk.keep[,1]
+humann.milk.keep[,1] <- NULL
+
+#df as numeric for summing up rows
+milk.numericRows <- as.data.frame(sapply(humann.milk.keep, as.numeric))
+
+milk.partial1 <- as.data.frame(milk.numericRows %>% rowSums())
+colnames(milk.partial1)[1] = "sum_abs"
+
+#get pathways and sums
+milk.partial2 <- as.data.frame(rownames(humann.milk.keep))
+colnames(milk.partial2)[1] = "Pathway"
+
+milk.merged <- cbind(milk.partial2, milk.partial1)
+
+#extract top pathways
+milk.top.pathways <- c(milk.merged %>% 
+                         arrange(sum_abs) %>% 
+                         top_n(20) %>% 
+                         pull(Pathway))
+
+humann.milk.keep$Pathway2 <- rownames(humann.milk.keep)
+
+humann.milk.keep.top <- humann.milk.keep %>% 
+  filter(Pathway2 %in% milk.top.pathways) %>% 
+  select(-Pathway2)
+
+humann.milk.keep.top.num <- as.data.frame(sapply(humann.milk.keep.top, as.numeric))
+
+humann.milk.keep.top.num.withPaths <- cbind(as.data.frame(rownames(humann.milk.keep.top)), humann.milk.keep.top.num) 
+rownames(humann.milk.keep.top.num.withPaths) <- humann.milk.keep.top.num.withPaths[,1]
+humann.milk.keep.top.num.withPaths[,1] <- NULL
+
+humann.milk.keep.top.num.withPaths.mat <- as.matrix(humann.milk.keep.top.num.withPaths)
+
+#Set annotation
+ann <- data.frame(metadata.milk.clean$`Samply type`, metadata.milk.clean$`Group`)
+colnames(ann) <- c('Samply type', 'Group')
+colours <- list('Samply type' = c('Milk_1M' = "#e66101", 'Milk_3M' = "#fdb863"),
+  'Group'= c('Group_1' = '#630a4c', 'Group_2' = '#ad3691', 'Group_3' = '#de9ecd', 'Group_4' = '#f2e6ef'))
+
+colAnn <- HeatmapAnnotation(df = ann,
+  which = 'col',
+  col = colours,
+  annotation_width = unit(c(1, 4), 'cm'),
+  gap = unit(1, 'mm'))
+
+row_dend = dendsort(hclust(dist(humann.milk.keep.top.num.withPaths.mat)))
+col_dend = dendsort(hclust(dist(t(humann.milk.keep.top.num.withPaths.mat))))
+
+col_fun = colorRamp2(c(0, 0.00001, 0.0001, 0.001, 1), 
+                     #c("white", "grey50", 'grey30', "#000000", "#000000"))
+c("white", "#6776b5", '#35499d', "#000000", "#000000"))
+
+heatmap.milk <- Heatmap(humann.milk.keep.top.num.withPaths.mat, 
+        name = "Abundance", 
+        cluster_columns = col_dend,
+        clustering_distance_rows = "euclidean", 
+        clustering_distance_columns = "euclidean",
+        show_column_names = FALSE, 
+        show_row_names = TRUE, 
+        show_row_dend = TRUE, 
+        col = col_fun, 
+        row_names_gp = gpar(fontsize = 8),
+        top_annotation=colAnn, 
+        column_dend_height = unit(5, "mm"),
+        row_dend_width =unit(5, "mm"))
+
+pdf(file=paste0("figures/functional_profiling/heatmap_Milk.pdf"), width=8, height=4)
+heatmap.milk
+invisible(dev.off())
+
+heatmap.milk
+```
+
+## Infant stool samples
+```{r}
+metadata.stool.groups <- left_join(metadata.stool, bifido.groups, by=c("clade_name"="Sample"))
+
+metadata.stool.clean <- metadata.stool.groups %>%
+filter(!is.na(clade_name)) %>% 
+  filter(Keep!="Discard")
+  
+list.stool.keep <- c(metadata.stool.clean %>% 
+  pull(clade_name))
+
+#filter only STOOL samples (as rows)
+humann.stool.keep <- humann_all.clean.t %>%  
+  filter(!grepl('MILK', Samples)) %>% 
+  select(-Samples)
+
+#transpose back (samples as cols)
+humann.stool.keep <- as.data.frame(t(humann.stool.keep))
+rownames(humann.stool.keep) <- humann.stool.keep[,1]
+humann.stool.keep[,1] <- NULL
+
+#df as numeric for summing up rows
+tmp3 <- as.data.frame(sapply(humann.stool.keep, as.numeric))
+
+stool.partial1 <- as.data.frame(tmp3 %>% 
+  rowSums())
+
+colnames(stool.partial1)[1] = "sum_abs"
+
+#get pathways and sums
+stool.partial2 <- as.data.frame(rownames(humann.stool.keep))
+colnames(stool.partial2)[1] = "Pathway"
+
+stool.merged <- cbind(stool.partial2, stool.partial1)
+
+#extract top pathways
+top.stool.pathways <- c(stool.merged %>% arrange(sum_abs) %>% 
+                    top_n(30) %>% 
+                    pull(Pathway))
+
+humann.stool.keep$Pathway2 <- rownames(humann.stool.keep)
+
+humann.stool.keep.top <- humann.stool.keep %>% 
+  filter(Pathway2 %in% top.stool.pathways) %>% 
+  select(-Pathway2)
+
+humann.stool.keep.top.num <- as.data.frame(sapply(humann.stool.keep.top, as.numeric))
+
+humann.stool.keep.top.num.withPaths <- cbind(as.data.frame(rownames(humann.stool.keep.top)), humann.stool.keep.top.num) 
+rownames(humann.stool.keep.top.num.withPaths) <- humann.stool.keep.top.num.withPaths[,1]
+humann.stool.keep.top.num.withPaths[,1] <- NULL
+
+humann.stool.keep.top.num.withPaths.mat <- as.matrix(humann.stool.keep.top.num.withPaths)
+
+#Set annotation
+ann <- data.frame(metadata.stool.clean$`Samply type`, metadata.stool.clean$`Group`)
+colnames(ann) <- c('Samply type', 'Group')
+colours <- list('Samply type' = c('Stool_1M' = "#5e3c99", 'Stool_6M' = "#b2abd2"),
+  'Group'= c('Group_1' = '#630a4c', 'Group_2' = '#ad3691', 'Group_3' = '#de9ecd', 'Group_4' = '#f2e6ef'))
+
+colAnn <- HeatmapAnnotation(df = ann,
+  which = 'col',
+  col = colours,
+  annotation_width = unit(c(1, 4), 'cm'),
+  gap = unit(1, 'mm'))
+
+row_dend = dendsort(hclust(dist(humann.stool.keep.top.num.withPaths.mat)))
+col_dend = dendsort(hclust(dist(t(humann.stool.keep.top.num.withPaths.mat))))
+
+col_fun = colorRamp2(c(0, 0.001, 0.01, 1), 
+                     c("white", "#6776b5", "#35499d", "#000000"))
+
+heatmap.stool <- Heatmap(humann.stool.keep.top.num.withPaths.mat, 
+        name = "Abundance", 
+        cluster_columns = col_dend,
+        clustering_distance_rows = "euclidean", 
+        clustering_distance_columns = "euclidean",
+        show_column_names = FALSE, 
+        show_row_names = TRUE, 
+        show_row_dend = TRUE, 
+        col = col_fun, 
+        row_names_gp = gpar(fontsize = 8),
+        top_annotation=colAnn, 
+        column_dend_height = unit(5, "mm"),
+        row_dend_width =unit(5, "mm"))
+
+pdf(file=paste0("figures/functional_profiling/heatmap_Stool_small.pdf"), width=7.5, height=6)
+heatmap.stool
+invisible(dev.off())
+
+heatmap.stool
+```

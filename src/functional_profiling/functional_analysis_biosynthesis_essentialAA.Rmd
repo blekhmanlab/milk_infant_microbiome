@@ -1,0 +1,287 @@
+---
+title: "Metabolic pathways associated with the biosynthesis of essential amino acids"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message=FALSE)
+options(stringsAsFactors = FALSE)
+```
+
+#Prepare environment
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(gridExtra)
+library(data.table)
+library(stringr)
+library(plyr)
+library(dplyr)
+library(Hmisc)
+library(rstatix)
+```
+
+#Load tables
+```{r}
+#humann table
+humann_raw <- read_delim("data/functional_profiling/milk_infant_relab_pathabundance_UNFILTERED.tsv", delim = '\t')
+#metadata table
+metadata <- read_delim("data/metadata.csv", delim = ',')
+#predominance groups
+groups <- read_delim("data/predominance_group/bifidos_groups.csv", delim = ',')
+```
+
+## Clean humann raw output file
+```{r}
+colnames(humann_raw)[colnames(humann_raw) == 'Pathway'] <- 'Full_pathway'
+
+humann_raw.sep <- humann_raw %>% 
+  tidyr::separate(Full_pathway, c('Pathway', 'Taxonomy'), sep ='\\|', remove = FALSE, fill="right") %>% 
+  tidyr::separate(Taxonomy, c('Genus', 'Species'), sep ='\\.', remove = FALSE, fill="right") %>% 
+  select(-Taxonomy)
+
+humann_raw.sep$Genus <- str_remove(humann_raw.sep$Genus, pattern = "g__")
+humann_raw.sep$Species <- str_remove(humann_raw.sep$Species, pattern = "s__")
+```
+
+```{r}
+#separate full clade name into taxonomic levels
+hum_file.clean <- humann_raw.sep %>% 
+  filter(Pathway != "UNINTEGRATED" & !is.na(Genus) & !is.na(Species)) %>% 
+  select(-Full_pathway, -Species, -Genus)
+
+hum_file.clean.long <- hum_file.clean %>% 
+  pivot_longer(cols = !Pathway, names_to = "Sample", values_to = "Abundance") %>% 
+  filter(Abundance>0)
+
+metadata.fixedOldFullName <- metadata %>% 
+  mutate(OldFullName=paste0(Old_sample_name, "_",Sample_ID))
+
+merged.pathways <- left_join(hum_file.clean.long, metadata.fixedOldFullName, by=c("Sample"="OldFullName"))
+
+```
+
+```{r}
+#function to count number of samples per each boxplot
+stat_box_data <- function(y) {
+  return(data.frame(y = 0, label = paste(length(y))))
+}
+```
+
+# Biosynthesis of essential amino acids (AA)
+```{r}
+#histidine, isoleucine, leucine, lysine, methionine, phenylalanine, threonine, tryptophan, and valine
+#no tryptophan-related entry was found
+eaa <- c("L-histidine biosynthesis", "L-isoleucine biosynthesis", "L-isoleucine biosynthesis",
+         "L-lysine biosynthesis", "L-methionine biosynthesis", "L-phenylalanine biosynthesis",
+         "L-threonine biosynthesis", "L-valine biosynthesis")
+
+eaa.list <- paste(eaa, collapse = "|")
+
+merged.pathways.biosynthesis <- merged.pathways %>% 
+  mutate(eaa_biosynthesis = if_else(grepl(eaa.list, Pathway) , "1", "0"))
+```
+
+## Means with confidence intervals
+```{r}
+#boxplots are based on median, while this plot shows a dot for the mean and the confience interval at 95% using bootstrapping (1000 repetitions)
+pathways.biosynthesisOnly <- merged.pathways.biosynthesis %>%
+  filter(eaa_biosynthesis==1)
+  #filter(grepl(eaa.list, Pathway)==TRUE)
+
+pathways.biosynthesisOnly.minimal <- pathways.biosynthesisOnly %>% 
+  select(Pathway, Abundance, Sample_type)
+
+cdata <- ddply(pathways.biosynthesisOnly.minimal, c("Sample_type"), summarise,
+               N    = length(Abundance),
+               mean = mean(Abundance),
+               sd   = sd(Abundance),
+               se   = sd / sqrt(N)
+)
+
+cdata.v2 <- pathways.biosynthesisOnly.minimal %>% 
+  select(Abundance, Sample_type) %>% 
+  group_by(Sample_type) %>% 
+  group_map(~ smean.cl.boot(., conf.int = .95, B = 1000, na.rm = TRUE)) %>%
+  bind_rows()
+
+cdata.v2.names <- cbind(cdata[1],cdata.v2)
+pd <- position_dodge(0.1) # move them .05 to the left and right
+
+#with bootstrapping
+means.ci95.plot <- ggplot(cdata.v2.names, aes(x=Sample_type, y=Mean, colour=Bodysite)) + 
+    geom_errorbar(aes(ymin=Lower, ymax=Upper), colour="black", width=.20, position=pd) +
+    #geom_line(position=pd, colour="black") +
+    geom_point(position=pd, size=4, shape=21, fill = c("#e66101", "#fdb863", "#5e3c99", "#b2abd2"), colour="black") +
+    xlab("Sample type") +
+    ylab("Relative abundance biosynthesis pathways") +
+    theme_bw() + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+pdf(file=paste0("figures/functional_profiling/biosynthesis_meanBoot95CI_EAA.pdf"), width=3, height=4)
+means.ci95.plot
+invisible(dev.off())
+
+means.ci95.plot
+
+# Statistical significance 
+pathways.biosynthesisOnly.minimal %>% 
+  t_test(Abundance ~ Sample_type) %>% 
+  adjust_pvalue(method = 'bonferroni') %>%
+  add_significance()
+```
+
+## Means with confidence intervals - divided by BF status - stools only
+```{r}
+#only stool samples
+pathways.biosynthesisOnly.minimal.bf <- pathways.biosynthesisOnly %>% 
+  #filter(Sample_type =="Stool_1M" | Sample_type =="Stool_6M") %>% 
+  filter(!is.na(Exclusive_bf)) %>% 
+  mutate(sampleType_bf = paste0(Sample_type, "_", Exclusive_bf)) %>% 
+  mutate(sampleType_bf = ifelse(Sample_type=="Milk_1M", "Milk_1M", 
+                                ifelse(Sample_type=="Milk_3M", "Milk_3M", sampleType_bf))) %>% 
+  select(Pathway, Abundance, sampleType_bf)
+
+cdata.bf <- ddply(pathways.biosynthesisOnly.minimal.bf, c("sampleType_bf"), summarise,
+               N    = length(Abundance),
+               mean = mean(Abundance),
+               sd   = sd(Abundance),
+               se   = sd / sqrt(N)
+)
+
+cdata.bf.v2 <- pathways.biosynthesisOnly.minimal.bf %>% 
+  select(Abundance, sampleType_bf) %>% 
+  group_by(sampleType_bf) %>% 
+  group_map(~ smean.cl.boot(., conf.int = .95, B = 1000, na.rm = TRUE)) %>%
+  bind_rows()
+
+cdata.bf.v2.names <- cbind(cdata.bf[1], cdata.bf.v2)
+pd <- position_dodge(0.1) # move them .05 to the left and right
+
+#with bootstrapping
+means.ci95.plot.bf <- ggplot(cdata.bf.v2.names, aes(x=sampleType_bf, y=Mean, colour=Bodysite)) + 
+    geom_errorbar(aes(ymin=Lower, ymax=Upper), colour="black", width=.20, position=pd) +
+    geom_point(position=pd, size=4, shape=21, fill = c("#e66101", "#fdb863", "#5e3c99", "#b2abd2", "#b2abd2"), colour="black") +
+    xlab("Sample type_BF") +
+    ylab("Relative abundance biosynthesis pathways") +
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+pdf(file=paste0("figures/functional_profiling/biosynthesis_meanBoot95CI_EAA_breastfeeding.pdf"), width=2.1, height=3.1)
+means.ci95.plot.bf
+invisible(dev.off())
+
+# Statistical significance 
+pathways.biosynthesisOnly.minimal.bf %>% 
+  t_test(Abundance ~ sampleType_bf) %>% 
+  adjust_pvalue(method = 'bonferroni') %>%
+  add_significance()
+```
+
+## mean with CI - eassential amino acids (EAA) + predominance groups
+```{r}
+metadata.fixedOldFullName <- metadata %>% 
+  mutate(OldFullName=paste0(Old_sample_name, "_",Sample_ID))
+
+merged.pathways <- left_join(hum_file.clean.long, metadata.fixedOldFullName, by=c("Sample"="OldFullName"))
+merged.pathways.groups <- left_join(merged.pathways, groups, by=c("Old_sample_name"="Sample"))
+
+#boxplots are based on median, while this plot shows a dot for the mean and the confidence interval at 95% using bootstrapping (1000 repetitions)
+pathways.biosynthesisOnly <- merged.pathways.groups %>% 
+  mutate(biosynthesis = if_else(grepl(eaa.list, Pathway) , "1", "0")) 
+
+pathways.biosynthesisOnly.minimal <- pathways.biosynthesisOnly %>% 
+  select(Pathway, Abundance, Sample_type, Bodysite, Group) %>% 
+  mutate(tmp=paste0(Sample_type, "_", Group))
+
+#run the functions length, mean, and sd on the value of "change" for each group, 
+#broken down by sex + condition
+cdata <- ddply(pathways.biosynthesisOnly.minimal, c("tmp"), summarise,
+               N    = length(Abundance),
+               mean = mean(Abundance),
+               sd   = sd(Abundance),
+               se   = sd / sqrt(N)
+)
+
+cdata.v2 <- pathways.biosynthesisOnly.minimal %>% 
+  select(Abundance, tmp) %>% 
+  group_by(tmp) %>% 
+  group_map(~ smean.cl.boot(., conf.int = .95, B = 1000, na.rm = TRUE)) %>%
+  bind_rows()
+
+cdata.v2.names <- cbind(cdata[1],cdata.v2)
+pd <- position_dodge(0.1) # move them .05 to the left and right
+
+#with bootstrapping
+means.ci95.plot.eaa.groups <-ggplot(cdata.v2.names, aes(x=reorder(tmp, Mean), y=Mean, colour=Bodysite)) + 
+    geom_errorbar(aes(ymin=Lower, ymax=Upper), colour="black", width=.20, position=pd) +
+    #geom_line(position=pd, colour="black") +
+    geom_point(position=pd, size=4, shape=21, colour="black") +
+    xlab("Sample type") +
+    ylab("Relative abundance EAA biosynthesis pathways") +
+    theme_bw() + 
+  coord_flip()
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+pdf(file=paste0("figures/functional_profiling/biosynthesis_EAA_meanBoot95CI_groups.pdf"), width=6, height=4)
+means.ci95.plot.eaa.groups
+invisible(dev.off())
+
+means.ci95.plot.eaa.groups
+
+# Statistical significance 
+pathways.biosynthesisOnly.minimal %>% 
+  t_test(Abundance ~ tmp) %>% 
+  adjust_pvalue(method = 'bonferroni') %>%
+  add_significance()
+```
+
+# Pathways associated with Peptidooglycan maturation
+```{r}
+pathways.peptidoglycanmaturation <- merged.pathways.groups %>% 
+  mutate(biosynthesis = if_else(grepl("peptidoglycan maturation", Pathway) , "1", "0")) 
+
+pathways.peptidoglycanmaturation.minimal <- pathways.peptidoglycanmaturation %>% 
+  select(Pathway, Abundance, Sample_type, Bodysite, Group) %>% 
+  mutate(tmp=paste0(Sample_type, "_", Group)) 
+
+cdata <- ddply(pathways.peptidoglycanmaturation.minimal, c("tmp"), summarise,
+               N    = length(Abundance),
+               mean = mean(Abundance),
+               sd   = sd(Abundance),
+               se   = sd / sqrt(N)
+)
+
+cdata.v2 <- pathways.peptidoglycanmaturation.minimal %>% 
+  select(Abundance, tmp) %>% 
+  group_by(tmp) %>% 
+  group_map(~ smean.cl.boot(., conf.int = .95, B = 1000, na.rm = TRUE)) %>%
+  bind_rows()
+
+cdata.v2.names <- cbind(cdata[1],cdata.v2)
+pd <- position_dodge(0.1) # move them .05 to the left and right
+
+means.ci95.plot.peptidoglyc <- ggplot(cdata.v2.names, aes(x=reorder(tmp, Mean), y=Mean, colour=Bodysite)) + 
+    geom_errorbar(aes(ymin=Lower, ymax=Upper), colour="black", width=.20, position=pd) +
+    #geom_line(position=pd, colour="black") +
+    geom_point(position=pd, size=4, shape=21, colour="black") +
+    xlab("Sample type") +
+    ylab("Relative abundance peptidoglycan maturation biosynthesis pathways") +
+    theme_bw() + 
+  coord_flip()
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+pdf(file=paste0("figures/functional_profiling/peptidoglycan_maturation_meanBoot95CI_groups.pdf"), width=6, height=4)
+means.ci95.plot.peptidoglyc
+invisible(dev.off())
+
+means.ci95.plot.peptidoglyc
+
+# Statistical significance 
+sign.df <- as.data.frame(pathways.peptidoglycanmaturation.minimal %>% 
+  t_test(Abundance ~ tmp) %>% 
+  adjust_pvalue(method = 'bonferroni') %>%
+  add_significance())
+```
+
+

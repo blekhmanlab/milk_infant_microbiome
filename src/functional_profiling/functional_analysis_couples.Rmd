@@ -1,0 +1,196 @@
+---
+title: "Functional profiling analysis across stool samples over time"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message=FALSE)
+options(stringsAsFactors = FALSE)
+```
+
+## Prepare environment
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(gridExtra)
+library(data.table)
+library(stringr)
+library(smplot2)
+library(gap)
+```
+
+## Load files
+```{r}
+#HUMAnN output file
+humann_raw <- read_delim("data/functional_profiling/milk_infant_relab_pathabundance_UNFILTERED.tsv", delim = '\t')
+#metadata table
+metadata <- read_delim("data/metadata.csv", delim = ',')
+```
+
+## Clean humann raw output file
+```{r}
+colnames(humann_raw)[colnames(humann_raw) == 'Pathway'] <- 'Full_pathway'
+
+humann_raw.sep <- humann_raw %>% 
+  tidyr::separate(Full_pathway, c('Pathway', 'Taxonomy'), sep ='\\|', remove = FALSE, fill="right") %>% 
+  tidyr::separate(Taxonomy, c('Genus', 'Species'), sep ='\\.', remove = FALSE, fill="right") %>% 
+  select(-Taxonomy)
+
+humann_raw.sep$Genus <- str_remove(humann_raw.sep$Genus, pattern = "g__")
+humann_raw.sep$Species <- str_remove(humann_raw.sep$Species, pattern = "s__")
+```
+
+## Clean pathways
+```{r}
+#separate full clade name into taxonomic levels
+hum_file.clean <- humann_raw.sep %>% 
+  filter(Pathway != "UNINTEGRATED" & !is.na(Genus) & !is.na(Species)) %>% 
+  select(-Full_pathway, -Species, -Genus)
+
+hum_file.clean.long <- hum_file.clean %>% 
+  pivot_longer(cols = !Pathway, names_to = "Sample", values_to = "Abundance") %>% 
+  filter(Abundance>0)
+
+hum_file.clean.long <- left_join(hum_file.clean.long, humann_raw.sep %>% select(Pathway, Genus, Species), by="Pathway")
+
+metadata <- metadata %>% 
+  select(Full_name, Sample_type, Bodysite, `Mother Infant Pair`)
+
+merged.pathways.master <- left_join(hum_file.clean.long, metadata, by=c("Sample"="Full_name"))
+```
+
+# Pathways similarities between mother-infant pairs
+
+## Milk vs stool - per M-I pair
+```{r}
+#get p and rho values for spearman correlation btw milk and stools for each M-I Couple
+mean_relabs <- merged.pathways.master %>% 
+  group_by(`Mother Infant Pair`, Pathway, Bodysite) %>% 
+  summarise(mean_relab=mean(Abundance))
+
+tmp1.shared <- mean_relabs %>% 
+  pivot_wider(names_from = "Bodysite",
+              values_from = "mean_relab") %>% 
+  select(-"NA") %>% 
+  filter(!is.na(Milk) & !is.na(Stool)) 
+
+couples.list <-c(tmp1.shared %>% 
+  ungroup() %>% 
+  group_by(`Mother Infant Pair`) %>% 
+  mutate(n=n()) %>% 
+  filter(n>9) %>%  #at least 10 pathways per couple
+  ungroup() %>% 
+  select(`Mother Infant Pair`) %>%
+  distinct() %>%
+  pull(`Mother Infant Pair`))
+
+#couples.list.small <- c("Mother_Infant_Pair_1")
+collect_results <- data.frame()
+
+for (couple in couples.list) {
+
+    print(couple)
+    res <- data.frame()
+
+    tmp1.shared.target <- tmp1.shared %>% 
+      filter(`Mother Infant Pair`==couple)
+    
+    #get p and rho values
+    res <- cor.test(tmp1.shared.target$Stool, tmp1.shared.target$Milk, method = 'spearman')
+    pvalue <- res$p.value
+    rho <- res$estimate
+    
+    collect_results <- rbind(collect_results,
+                data.frame(
+                  pvalue = pvalue,
+                  rho = rho,
+                  method="spearman",
+                  couple = couple))
+}
+
+#apply Benjamin Hochberg correction
+collect_results$pvalue.BH <- p.adjust(collect_results$pvalue, method = "BH")
+
+#plot rho and p values
+collect_results.plot <- ggplot(data = collect_results, mapping = aes(x = reorder(couple, log10(pvalue.BH)), y = log10(pvalue.BH))) +
+  geom_point(aes(size=rho), colour="grey70") +
+  theme_bw()+
+  coord_flip()+
+  geom_hline(yintercept=log10(0.01), color = "orange", size=0.5)
+
+pdf(file=paste0("figures/functional_profiling/couples_corr_sharedPathways_milkStool_mini_log10.pdf"), width=5, height=3)
+collect_results.plot
+invisible(dev.off())
+
+collect_results.plot
+```
+
+## qq plot (suppl. figure)
+```{r}
+pdf(file=paste0("figures/functional_profiling/qqplot.pdf"), width=3.5, height=4)
+qqnorm(collect_results$pvalue, pch = 1, frame = FALSE)
+qqline(collect_results$pvalue, col = "steelblue")
+invisible(dev.off())
+
+pdf(file=paste0("figures/functional_profiling/qqplot_unif.pdf"), width=3.5, height=4)
+qqunif(collect_results$pvalue)
+invisible(dev.off())
+```
+
+## Loop over pathways (suppl. figure)
+```{r}
+pathways.list <-c(tmp1.shared %>% 
+  ungroup() %>% 
+  group_by(Pathway) %>% 
+  mutate(n=n()) %>% 
+  filter(n>10) %>%  #at least 10 pathways per couple
+  ungroup() %>% 
+  select(Pathway) %>%
+  distinct() %>%
+  pull(Pathway))
+
+collect_results.pathways <- data.frame()
+
+for (pathway in pathways.list) {
+    print(couple)
+    res <- data.frame()
+
+    tmp1.shared.target <- tmp1.shared %>% 
+      filter(Pathway==pathway)
+    
+    #get p and rho values
+    res <- cor.test(tmp1.shared.target$Stool, tmp1.shared.target$Milk, method = 'spearman')
+    pvalue <- res$p.value
+    rho <- res$estimate
+    
+    collect_results.pathways <- rbind(collect_results.pathways,
+                data.frame(
+                  pvalue = pvalue,
+                  rho = rho,
+                  method="spearman",
+                  pathway = pathway))
+}
+
+#apply Benjamin Hochberg correction
+collect_results.pathways$pvalue.BH <- p.adjust(collect_results.pathways$pvalue, method = "BH")
+#order pathways for plot
+collect_results.pathways$pathway <- reorder(collect_results.pathways$pathway, -collect_results.pathways$pvalue)
+
+#plot
+pathways.pvalues <- ggplot(collect_results.pathways) +
+  geom_segment( aes(x=pathway, xend=pathway, y=pvalue, yend=pvalue.BH), color="black", alpha=0.5) +
+  geom_point( aes(x=pathway, y=pvalue), color="navy", size=3, alpha=0.7) +
+  geom_point( aes(x=pathway, y=pvalue.BH), color="cornflowerblue", size=3, alpha=0.7) +
+  coord_flip()+
+  geom_hline(yintercept=0.05, color = "orange", size=1)+
+  theme_bw() +
+  xlab("") +
+  ylab("Value of Y")
+
+pdf(file=paste0("figures/functional_profiling/pathways_corr_sharedPathways_milkStool_lollipop.pdf"), width=11, height=5)
+pathways.pvalues
+invisible(dev.off())
+
+pathways.pvalues
+```
