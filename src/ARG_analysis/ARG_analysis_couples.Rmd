@@ -1,0 +1,296 @@
+---
+title: "ARGs analysis per mother-infant pair"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message=FALSE)
+options(stringsAsFactors = FALSE)
+```
+
+#Prepare environment.
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(gridExtra)
+library("ggdendro")
+library("reshape2")
+library("grid")
+library(magrittr)
+library(data.table)
+library(stringr)
+```
+
+## Load tables
+```{r}
+#DeepARG output table
+arg_file <- read_delim("data/ARG/all_results.ARG.tsv", delim = '\t')
+#metadata table
+metadata <- read_delim("data/metadata.csv", delim = ',')
+```
+
+## Apply identity threshold
+```{r}
+#get sample name
+names <- str_split_fixed(arg_file$filename, "_", 2)
+arg_file.names <- cbind(arg_file, names)
+
+#identity thresholds
+arg_file.clean <- arg_file.names %>% 
+  filter(identity>=95) %>% 
+  select(`1`, `#ARG`, `predicted_ARG-class`) %>% 
+  filter(`predicted_ARG-class` != "multidrug")
+
+arg_file.clean_metadata <- left_join(arg_file.clean, metadata, by=c("1"= "Correct_sample_name"))
+
+#check number of samples profiles with deepARG
+a <- arg_file.names %>% 
+  group_by(`1`) %>%
+  summarize(distinct_points = n_distinct(`1`))
+  
+arg_file.clean_metadata <- arg_file.clean_metadata %>% 
+  filter(Post_filtering_QC=="Keep", `predicted_ARG-class` != "unclassified") %>% 
+  select(-`1`, -Reads_filtered_GOOD, -Reads_mapped, -Percent, -`Total taxa`, -Post_filtering_QC)
+```
+
+## ARG classes found in both milk and stools - all MI pairs - with GENES information
+```{r}
+#arg and classes shared between milk and stool samples
+couples.classes.genes <- arg_file.clean_metadata %>% 
+  select(`#ARG`, `predicted_ARG-class`, `Mother Infant Pair`, Bodysite) %>% 
+  group_by(`#ARG`, `predicted_ARG-class`, `Mother Infant Pair`, Bodysite) %>% 
+  summarise(n=n()) %>% 
+  #select(-n) %>% 
+  group_by(`#ARG`, `predicted_ARG-class`, `Mother Infant Pair`) %>% 
+  mutate(n_bodysites=n()) %>% 
+  filter(n_bodysites>1)
+
+#get totals
+#number of couples in which target ARG class was found
+couples.totals <- arg_file.clean_metadata %>% 
+  select(`#ARG`, `predicted_ARG-class`, `Mother Infant Pair`, Bodysite) %>% 
+  group_by(`#ARG`, `predicted_ARG-class`, `Mother Infant Pair`, Bodysite) %>% 
+  summarise(n=n()) %>% 
+  select(-n) %>% 
+  group_by(`#ARG`, `predicted_ARG-class`, `Mother Infant Pair`) %>% 
+  mutate(n_bodysites=n()) %>% 
+  ungroup() %>% 
+  select(`predicted_ARG-class`, `Mother Infant Pair`) %>% 
+  distinct() %>% 
+  group_by(`predicted_ARG-class`) %>% 
+  #identified in at least one of the samples of the couple
+  summarise(n_couple_targetClass_identified=n())
+
+#number of couples that share target class/gene
+couples.sharing <- couples.classes.genes %>% 
+  select(-n_bodysites, -Bodysite) %>% 
+  distinct() %>% 
+  group_by(`#ARG`, `predicted_ARG-class`) %>% 
+  summarise(ncouple_sharing_target=n())
+
+#merge
+couples.merged <- left_join(couples.sharing, couples.totals, by="predicted_ARG-class")
+couples.merged.perc= couples.merged %>% 
+  mutate(perc=ncouple_sharing_target*100/n_couple_targetClass_identified)
+
+#classes with at least 3 genes identified per class
+classes.keep <- c(couples.merged.perc %>% 
+  ungroup() %>% 
+  group_by(`predicted_ARG-class`) %>%
+  summarise(n_genes_perClass=n()) %>%
+  filter(n_genes_perClass>2) %>% 
+  pull(`predicted_ARG-class`)) 
+
+#apply filter
+couples.merged.perc.clean <- couples.merged.perc %>% 
+  filter(`predicted_ARG-class` %in% classes.keep)
+
+couples.merged.perc.clean.plot <- ggplot(couples.merged.perc.clean, 
+       aes(x=reorder(`predicted_ARG-class`, -perc), y=perc)) + 
+  geom_boxplot(outlier.size = -1)+
+  geom_jitter(alpha=0.5, color="black", width = 0.2)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+pdf(file=paste0("figures/sharedARG_classes_genes_boxplot.pdf"), width=3, height=2.2)
+couples.merged.perc.clean.plot
+invisible(dev.off())
+
+couples.merged.perc.clean.plot
+```
+
+# Permutation analysis
+## Goal: overall, REAL mother-infant pairs have more ARGs in common than by chance (permuted mother-infant pairs)
+
+## Real mean and median
+```{r}
+arg_file.clean_metadata.minimal <- arg_file.clean_metadata %>% 
+    select(`#ARG`, `Mother Infant Pair`, Bodysite) 
+
+#get couples that have args identified in both maternal milk and infant stool samples
+couples.withARGs_motherInfant <- c(arg_file.clean_metadata.minimal %>% 
+  group_by(`Mother Infant Pair`, Bodysite) %>% 
+  summarise(n=n()) %>% 
+  group_by(`Mother Infant Pair`) %>% 
+  summarise(nbodysites=n()) %>% 
+  filter(nbodysites==2) %>% 
+  pull(`Mother Infant Pair`))
+
+length(couples.withARGs_motherInfant)
+
+#get total number of args found in milk + stool
+totals.arg.perCouple <- arg_file.clean_metadata.minimal %>%
+  filter(`Mother Infant Pair` %in% couples.withARGs_motherInfant) %>%
+  group_by(`Mother Infant Pair`, Bodysite) %>%
+  distinct() %>%
+  summarise(nargs=n()) %>%
+  group_by(`Mother Infant Pair`) %>%
+  summarise(sumDistinctArgs_perCouple=sum(nargs))
+
+#find args shared between milk and stool
+shared.arg.perCouple <- arg_file.clean_metadata.minimal %>%
+  filter(`Mother Infant Pair` %in% couples.withARGs_motherInfant) %>% 
+  group_by(`#ARG`, `Mother Infant Pair`, Bodysite) %>% 
+  summarise(nargs=n()) %>% 
+  group_by(`#ARG`, `Mother Infant Pair`) %>% 
+  summarise(present_nBodysites=n()) %>% 
+  filter(present_nBodysites==2) %>% #filter for genes found in both milk and stool (per couple)
+  group_by(`Mother Infant Pair`) %>% 
+  summarise(nGenes_sharedMotherInfant=n())
+
+#REAL mean and median
+real.mean <- mean(shared.arg.perCouple$nGenes_sharedMotherInfant)
+real.median <- median(shared.arg.perCouple$nGenes_sharedMotherInfant)
+
+#percentage shared arg between mother and infant
+merged.arg.perCouple <- left_join(shared.arg.perCouple, totals.arg.perCouple, by="Mother Infant Pair")
+
+merged.arg.perCouple.perc <- merged.arg.perCouple %>% 
+    mutate(percentage_sharedArg = (nGenes_sharedMotherInfant*100)/sumDistinctArgs_perCouple)
+
+#PERCENTAGE REAL mean and median
+real.mean.perc <- mean(merged.arg.perCouple.perc$percentage_sharedArg)
+real.median.perc <- median(merged.arg.perCouple.perc$percentage_sharedArg)
+```
+
+## Calculate permuted mean and median
+```{r, eval=FALSE}
+#warning:this step might take a while
+arg_file.names.master <- arg_file.names %>% 
+  filter(identity>=95 & `predicted_ARG-class` != "multidrug" & `predicted_ARG-class` != "unclassified") %>%  
+  select(`#ARG`, `1`) %>% 
+  mutate(real=`1`) %>% 
+  select(-`1`)
+
+arg_file.names.master$site <- ifelse(grepl("MILK", arg_file.names.master$real), "milk", "stool")
+
+#separate milk from stools
+#stools only
+arg_file.names.master.stool <- arg_file.names.master %>% 
+  filter(site=="stool") %>% 
+  mutate(permuted=real) #no permutation for stool samples
+
+#correct order of df columns
+arg_file.names.master.stool <- arg_file.names.master.stool[, c(1,3,2,4)]
+
+#Milk only
+arg_file.names.master.milk <- arg_file.names.master %>% 
+  filter(site=="milk")
+
+true.milk_samples <- c(arg_file.names.master.milk %>% 
+  select(real) %>% 
+  distinct() %>% 
+  pull())
+
+collect.results <- data.frame()
+
+#n iterations
+for (i in  seq(1:1000)){
+  #tmp1.milk.perm = transform(tmp1.milk, permuted = sample(real)) 
+  
+  #no seed to ensure the permutations are not the same at every iteration
+  perm.milk_samples <- sample(true.milk_samples)
+  
+  true.ID <- as.data.frame(true.milk_samples)
+  perm.ID <- as.data.frame(perm.milk_samples)
+  
+  conversion_df <- cbind(true.ID, perm.ID)
+  
+  arg_file.names.master.milk.perm <- left_join(arg_file.names.master.milk, 
+                                               conversion_df, 
+                                               by=c("real"="true.milk_samples"))
+  
+  colnames(arg_file.names.master.milk.perm)[colnames(arg_file.names.master.milk.perm) == 'perm.milk_samples'] <- 'permuted'
+    
+  #re-combine stools with milk results
+  combined.perm <- rbind(arg_file.names.master.stool, arg_file.names.master.milk.perm)
+
+  #add metadata
+  arg_file.clean_metadata.perm <- left_join(combined.perm, metadata, by=c("permuted"= "Old_sample_name"))
+    
+  arg_file.clean_metadata.perm <- arg_file.clean_metadata.perm %>% 
+    select(`#ARG`, site, real, permuted, Couple_ID, `Mother Infant Pair`)
+  
+  #shared args
+  shared.args.permuted <- arg_file.clean_metadata.perm %>%
+    group_by(`#ARG`, `Mother Infant Pair`, site) %>% 
+    summarise(nargs=n()) %>% 
+    group_by(`#ARG`, `Mother Infant Pair`) %>% 
+    summarise(present_nBodysites=n()) %>% 
+    filter(present_nBodysites==2) %>% #filter for genes found in both milk and stool (per couple)
+    group_by(`Mother Infant Pair`) %>% 
+    summarise(nGenes_sharedMotherInfant=n())
+  
+  #get total number of args found in milk + stool
+  totals.arg.permuted <- arg_file.clean_metadata.perm %>%
+    group_by(`Mother Infant Pair`, site) %>% 
+    distinct() %>% 
+    summarise(nargs=n()) %>% 
+    group_by(`Mother Infant Pair`) %>% 
+    summarise(sumDistinctArgs_perCouple=sum(nargs))
+
+  merged.arg.permuted <- left_join(shared.args.permuted, totals.arg.permuted, by="Mother Infant Pair")
+
+  merged.arg.permuted.perc <- merged.arg.permuted %>% 
+    mutate(percentage_sharedArg_permuted = (nGenes_sharedMotherInfant*100)/sumDistinctArgs_perCouple)
+  
+  perm.mean <- mean(merged.arg.permuted.perc$percentage_sharedArg_permuted)
+  perm.median <- median(merged.arg.permuted.perc$percentage_sharedArg_permuted) 
+  
+  collect.results <- rbind(
+        collect.results,
+        data.frame(iteration = i, permuted_mean = perm.mean, permuted_median = perm.median)
+      )
+}
+
+write_csv(collect.results, "data/ARG_analysis/permutations_results_Fixed_counts_perc.csv")
+
+```
+
+## Plot mean and median distributions
+```{r}
+#load saved permutation results (avoids recomputing)
+permutation_results <- as.data.frame(read_csv("permutations_results_Fixed_counts_perc.csv"))
+
+#identify significance threshold on distribution
+Z <- permutation_results %>% select(iteration, permuted_mean)
+threshold <- quantile(Z[, 2], prob = 0.95)[[1]] #right threshold
+
+plot.mean <- permutation_results %>% 
+  ggplot(aes(x=permuted_mean)) +
+  geom_density(fill="black", color="black", alpha=0.3)+
+  theme_bw()+
+  geom_vline(xintercept = real.mean, color="darkorange", size=0.8)+
+  ggtitle("% of shared ARGs")
+
+#pvalue
+#number of permuted means that are higher than real mean (none)
+dim(collect.results %>% 
+  filter(permuted_mean>real.mean))[1]
+#pvalue: p<1/n.iterations (1000)
+
+pdf(file=paste0("figures/ARG_analysis/permuted_real_means_medians_sharedARG_Fixed_counts_percentages.pdf"), width=2, height=2)
+plot.mean
+invisible(dev.off())
+```
