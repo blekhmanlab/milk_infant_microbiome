@@ -27,7 +27,7 @@ library(circlize)
 ```{r}
 mpa_file.milk <- read_delim("data/species_composition/milk_samples_merged_abundance_contam_rm.txt", delim = '\t')
 mpa_file.stool <- read_delim("data/species_composition/infant_samples_merged_abundance_contam_rm.txt", delim = '\t')
-metadata.master <- read_delim("data/metadata_complete.csv", delim = ',')
+metadata.master <- read_delim("data/metadata.csv", delim = ',')
 bifido_groups <- read_delim("data/predominance_group/bifidos_groups.csv", delim = ',')
 ```
 
