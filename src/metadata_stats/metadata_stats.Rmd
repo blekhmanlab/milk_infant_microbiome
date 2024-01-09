@@ -19,7 +19,7 @@ library(cowplot)
 
 ## Load metadata file
 ```{r}
-metadata <- read_delim("data/metadata_complete.csv", delim = ',')
+metadata <- read_delim("data/metadata.csv", delim = ',')
 ```
 
 ## Predominance group
