@@ -1,1 +1,1 @@
-This folder will contain the figures resulting from the beta diversity analysis.
+This folder will contain the figures regarding the beta diversity analysis.
