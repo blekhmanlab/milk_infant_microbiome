@@ -32,7 +32,7 @@ mpa_file.delim <- mpa_file %>%
   tidyr::separate(clade_name, c('Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Strain'), sep ='\\|', remove = FALSE, fill="right") 
 
 #metadata table
-metadata <- read_delim("data/metadata_complete.csv", delim = ',')
+metadata <- read_delim("data/metadata.csv", delim = ',')
 
 #load and predominance groups information
 bifido_groups <- read_delim("data/predominance_group/bifidos_groups.csv", delim = ',')
