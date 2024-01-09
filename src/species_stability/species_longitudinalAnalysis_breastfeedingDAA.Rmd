@@ -1,0 +1,336 @@
+---
+title: "Analaysis of species stability over time and differential abundance between exclsuive BF and not excl. breastfed"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message=FALSE)
+options(stringsAsFactors = FALSE)
+```
+
+## Prepare environment
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(gridExtra)
+library("grid")
+library(magrittr)
+library(data.table)
+library(stringr)
+library(viridis)
+library(hrbrthemes)
+library(ComplexHeatmap)
+```
+
+## Load tables
+```{r}
+#metaphlan output table
+mpa_file <- read_delim("data/species_composition/milk_infant_rel_abundance_contam_rm_keepOnly.txt", delim = '\t')
+metadata <- read_delim("data/metadata.csv", delim = ',')
+```
+
+## Extract species information
+```{r}
+#separate full clade name into taxonomic levels
+mpa_file.delim <- mpa_file %>% 
+  tidyr::separate(clade_name, c('Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Strain'), sep ='\\|', remove = FALSE, fill="right") 
+
+#select clades assigned to species level
+mpa_file.clean.species <- mpa_file.delim %>% 
+  filter(!is.na(Species) & is.na(Strain)) 
+
+#keep simplified species name only
+to.drop <- c("clade_name", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Strain")
+mpa_file.species = mpa_file.clean.species[,!(names(mpa_file.clean.species) %in% to.drop)]
+mpa_file.species$Species <- str_remove(mpa_file.species$Species, pattern = "s__")
+mpa_file.species$Species <- gsub("_", " ", mpa_file.species$Species)
+
+mpa_file.species.long <- mpa_file.species %>% 
+  pivot_longer(cols = !Species, names_to = "Sample", values_to = "Abundance") 
+
+#split sample ID for later merge with metadata table
+mpa_file.species.long <- mpa_file.species.long %>% 
+  mutate(full_ID=Sample) %>% 
+  tidyr::separate(Sample, c('Sample', 'number'), sep ='_', remove = FALSE, fill="right") 
+
+#merge with metadata table
+merged.species <- left_join(mpa_file.species.long, metadata, by=c("full_ID"="Old_sample_name"))
+merged.species.clean <- merged.species %>% 
+  select(Species, Sample, Abundance, Sample_type, `Mother Infant Pair`, Exclusive_bf) %>% 
+  filter(Abundance>0) %>% 
+  distinct() %>% 
+  filter(Sample_type=="Stool_1M" | Sample_type=="Stool_6M")
+```
+
+
+# Species persistence over time in infant stool samples
+
+## filtering criteria for mother-infant pairs and most prevalent species
+```{r}
+#get species prevalence across 1M and 6M infant stools
+species.prevalence <- merged.species.clean %>%
+  group_by(Species) %>%
+  mutate(n_tmp=n()) %>% 
+  select(Species, n_tmp) %>% 
+  distinct() 
+
+#get top 10 most prevalent species
+top10.species <- species.prevalence[order(desc(species.prevalence$n_tmp)),] %>% 
+  head(n=15) %>% 
+  pull(Species)
+
+#get stool samples only from timeseries for which we have both timepoints
+couples_bothStool <- c(merged.species.clean %>% 
+  select(`Mother Infant Pair`, Sample_type) %>% 
+  distinct()%>% 
+  group_by(`Mother Infant Pair`) %>% 
+  summarise(n=n()) %>% 
+  filter(n==2) %>% 
+  pull(`Mother Infant Pair`))
+```
+
+## Overview of species stability across all infants
+```{r}
+merged.species.clean.couplesSpecies <- merged.species.clean %>% 
+  filter((`Mother Infant Pair` %in% couples_bothStool) & (Species %in% top10.species)) %>% 
+  mutate(Timepoint = ifelse(Sample_type=="Stool_1M", "1", "6")) %>% 
+  group_by(Timepoint, Species) %>% 
+  summarise(mean_rel_abs=mean(Abundance)) %>% 
+  group_by(Timepoint) %>% 
+  mutate(total_rel_abs = sum(mean_rel_abs),
+         percentage = mean_rel_abs*100/total_rel_abs)
+
+custom.stool3 <- c("#E57373", "#EC407A", "#D816B0", "#AB47BC", "#8E24AA", "#7E57C2", "#5E35B1", "#5C6BC0", "#3949AB", "#1A237E", "black", "white", "red", "blue", "green")
+
+merged.species.clean.couplesSpecies <- merged.species.clean.couplesSpecies %>% 
+  select(Species, Timepoint, percentage)
+
+merged.species.clean.couplesSpecies$Timepoint <- as.numeric(merged.species.clean.couplesSpecies$Timepoint)
+
+all.stool.stability.plot <- ggplot(merged.species.clean.couplesSpecies, aes(x=Timepoint, y=percentage, fill=Species)) + 
+  geom_area(position = 'stack', alpha=0.9, size=.5, colour="black")+
+  theme_light() +
+  scale_fill_manual(values=rev(custom.stool3)) 
+
+pdf(file=paste0("figures/species_stability/overview_stool_stability.pdf"), width=5, height=4)
+all.stool.stability.plot
+invisible(dev.off())
+
+all.stool.stability.plot
+```
+
+## t-test differentially abundant 1M vs 6M
+```{r}
+
+tmp1 <- merged.species.clean %>% 
+  mutate(Timepoint = ifelse(Sample_type=="Stool_1M", "1", "6")) %>% 
+  filter((`Mother Infant Pair` %in% couples_bothStool) & (Species %in% top10.species)) 
+  
+collect.results.allInfants <- data.frame()
+
+#species in both timepoints
+species.list.bothTimepoints.allInfants <- c(tmp1 %>% 
+  group_by(Species, `Mother Infant Pair`) %>% 
+  summarise(n=n()) %>% 
+  filter(n==2) %>% 
+  pull(Species) %>% 
+  unique())
+
+#get top n most prevalent species
+top.species.allInfants <- c(species.prevalence[order(desc(species.prevalence$n_tmp)),] %>% 
+  head(n=25) %>% 
+  pull(Species))
+
+species.list.bothTimepoints.allInfants.topMostPrevs <- intersect(species.list.bothTimepoints.allInfants, top.species.allInfants)
+
+#n iterations
+for (i in species.list.bothTimepoints.allInfants.topMostPrevs){
+
+  print(i)
+  
+  species.target.df <- tmp1 %>% 
+    filter(Species==i)
+    
+  res <- t.test(Abundance ~ Sample_type, data = species.target.df)
+  pvalue <- res$p.value
+
+  collect.results.allInfants <- rbind(
+         collect.results.allInfants,
+         data.frame(Species = i, pvalue = pvalue)
+       )
+}    
+
+collect.results.allInfants$pvalue.BH <- p.adjust(collect.results.allInfants$pvalue, method = "BH")
+
+mat.all <- collect.results.allInfants %>% 
+  select(Species, pvalue.BH) %>% 
+  column_to_rownames("Species")
+
+Heatmap(mat.all, name = "1M-6M differential abundance")
+
+#species that have significant pvalues after BH correction
+species.signifBHpvalue <- c(mat.all %>%
+                              rownames_to_column("Species") %>% 
+                              filter(pvalue.BH<0.05) %>% 
+                              pull(Species))
+
+pdf(file=paste0("figures/species_stability/boxplots_DAA_1M6M.pdf"), width=7, height=4)
+ggplot(tmp1 %>% filter(Species %in% species.signifBHpvalue), aes(x=Timepoint, y=Abundance)) + 
+  geom_boxplot(outlier.size = -1)+
+  geom_jitter(alpha=0.4, fill="grey", width=0.2)+
+  theme_bw()+
+  facet_grid(~Species)+
+  stat_compare_means(method = "t.test", paired=TRUE)
+dev.off()
+
+```
+
+
+## species stability in infants divided by breastfeeding
+```{r}
+bf_transition.df <- metadata %>% 
+  filter(Sample_type=="Stool_1M" | Sample_type=="Stool_6M") %>% 
+  filter(`Mother Infant Pair` %in% couples_bothStool) %>% 
+  mutate(Exclusive_bf.num = ifelse(Exclusive_bf=="Yes", "1", "0")) %>% 
+  select(`Mother Infant Pair`, Sample_type, Exclusive_bf.num)
+
+bf_transition.df$Exclusive_bf.num <- as.numeric(bf_transition.df$Exclusive_bf.num)
+
+bf_transition.df.categories <- bf_transition.df %>% 
+  group_by(`Mother Infant Pair`) %>% 
+  summarise(n_exclbf_samples=sum(Exclusive_bf.num)) %>% 
+  mutate(bf_transition = ifelse(n_exclbf_samples=="2", "BF-BF", "BF-notBF")) %>% 
+  select(-n_exclbf_samples)
+
+merged.species.clean.bfcats <- left_join(merged.species.clean, bf_transition.df.categories, by=c("Mother Infant Pair"))
+
+merged.species.clean.couplesSpecies.bf <- merged.species.clean.bfcats %>% 
+  filter((`Mother Infant Pair` %in% couples_bothStool) & (Species %in% top10.species)) %>% 
+  filter(!is.na(bf_transition)) %>% 
+  mutate(Timepoint = ifelse(Sample_type=="Stool_1M", "1", "6")) %>% 
+  group_by(Timepoint, Species, bf_transition) %>% 
+  summarise(mean_rel_abs=mean(Abundance)) %>% 
+  group_by(Timepoint, bf_transition) %>% 
+  mutate(total_rel_abs = sum(mean_rel_abs),
+         percentage = mean_rel_abs*100/total_rel_abs)
+
+merged.species.clean.couplesSpecies.bf <- merged.species.clean.couplesSpecies.bf %>% 
+  select(Species, Timepoint, percentage, bf_transition)
+
+merged.species.clean.couplesSpecies.bf$Timepoint <- as.numeric(merged.species.clean.couplesSpecies.bf$Timepoint)
+
+bf.stability.plot <- ggplot(merged.species.clean.couplesSpecies.bf, aes(x=Timepoint, y=percentage, fill=Species)) + 
+   geom_area(position = 'stack', alpha=0.9, size=.5, colour="black")+
+   theme_light() +
+   scale_fill_manual(values=rev(custom.stool3)) +
+   facet_grid(~bf_transition)
+
+pdf(file=paste0("figures/species_stability/bf_stool_stability.pdf"), width=7, height=4)
+bf.stability.plot
+invisible(dev.off())
+```
+
+## t-test differentially abundant 1M vs 6M
+```{r}
+tmp2 <- merged.species.clean %>% 
+  mutate(Timepoint = ifelse(Sample_type=="Stool_1M", "1", "6")) %>% 
+  filter(`Mother Infant Pair` %in% couples_bothStool)
+
+tmp2.bfcat <- left_join(tmp2, bf_transition.df.categories, by=c("Mother Infant Pair"))
+
+#species in both timepoints
+species.list.bothTimepoints <- c(tmp2.bfcat %>% 
+  group_by(Species, `Mother Infant Pair`) %>% 
+  summarise(n=n()) %>% 
+  filter(n==2) %>% 
+  pull(Species) %>% 
+  unique())
+
+#get top n most prevalent species
+top.species <- c(species.prevalence[order(desc(species.prevalence$n_tmp)),] %>% 
+  head(n=25) %>% 
+  pull(Species))
+
+species.list.bothTimepoints.topMostPrevs <- intersect(species.list.bothTimepoints, top.species)
+
+collect.results <- data.frame()
+bfcats <- c("BF-BF", "BF-notBF")
+
+for (i in bfcats){
+  for (j in species.list.bothTimepoints.topMostPrevs){
+  
+    print(j)
+    
+    species.bfcat.target.df <- tmp2.bfcat %>% 
+      filter((bf_transition==i) & (Species==j))
+      
+    res <- t.test(Abundance ~ Timepoint, data = species.bfcat.target.df)
+    pvalue <- res$p.value
+  
+    collect.results <- rbind(
+           collect.results,
+           data.frame(BF_transition = i, Species = j, pvalue = pvalue)
+         )
+  }
+}    
+
+collect.results$pvalue.BH <- p.adjust(collect.results$pvalue, method = "BH")
+
+mat <- collect.results %>% 
+  select(Species, pvalue.BH, BF_transition) 
+  
+rownames(mat) <- make.names(mat[,1], unique = TRUE) 
+Heatmap(mat %>% select(-Species, -BF_transition))
+```
+
+#boxplots target taxa
+```{r}
+#boxplots of target taxa
+collect.results$pvalue.BH <- as.numeric(collect.results$pvalue.BH)
+
+#get top taxa for BF-BF results
+collect.results.BFBF <- collect.results %>% 
+  filter(BF_transition=="BF-BF")
+collect.results.BFBF <- collect.results.BFBF[order(collect.results.BFBF$pvalue.BH, decreasing = FALSE),]
+collect.results.BFBF.top <- c(collect.results.BFBF %>% 
+  slice(1:15) %>% 
+  pull(Species))
+
+#get top taxa for BF-notBF results
+collect.results.BFnotBF <- collect.results %>% 
+  filter(BF_transition=="BF-notBF")
+collect.results.BFnotBF <- collect.results.BFnotBF[order(collect.results.BFnotBF$pvalue.BH, decreasing = FALSE),]
+collect.results.BFnotBF.top <- c(collect.results.BFnotBF %>% 
+  slice(1:5) %>% 
+  pull(Species))
+
+target_taxa <- c(collect.results.BFBF.top, collect.results.BFnotBF.top)
+target_taxa2 <- c("Bifidobacterium breve", "Bifidobacterium longum", "Escherichia coli", 
+                 "Klebsiella pneumoniae", "Ruminococcus gnavus", "Ruminococcus gnavus")
+
+tmp2.bfcat.joinedVar <- tmp2.bfcat %>% 
+  filter(!is.na(bf_transition) & Species %in% target_taxa2) %>% 
+  mutate(timepoint_transition=paste0(Timepoint, "_", bf_transition)) %>% 
+  mutate(timepoint_transition=fct_relevel(timepoint_transition, c("1_BF-BF", "6_BF-BF","1_BF-notBF", "6_BF-notBF")))
+
+p1 <- ggplot(tmp2.bfcat.joinedVar, aes(x=timepoint_transition, y=log10(Abundance), fill=timepoint_transition)) + 
+  geom_boxplot(outlier.size = -1, alpha=0.8)+
+  #geom_jitter(alpha=0.3, size=0.4, fill="grey", width=0.2)+
+  theme_bw()+
+  facet_grid(~Species)+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))+
+  scale_fill_manual(values=c("#e66101", "#fdb863", "#5e3c99", "#b2abd2")) 
+
+my_comparisons <- list(c("1_BF-BF", "6_BF-BF"), 
+                       c("1_BF-notBF", "6_BF-notBF"),
+                       c("1_BF-BF", "1_BF-notBF"),
+                       c("6_BF-BF", "6_BF-notBF"))
+
+
+pdf(file=paste0("figures/species_stability/boxplots_DAA_targetSpecies_pvalues.pdf"), width=10, height=4)
+p1 + stat_compare_means(p.adjust.method = "BH", comparisons = my_comparisons, method = "t.test", label='p.adj') 
+invisible(dev.off())
+
+```
+
