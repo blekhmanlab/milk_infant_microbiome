@@ -1,1 +1,1 @@
-This folder will contain the figures resulting from the statistics on the available metadata
+This folder will contain the figures on the study metadata
