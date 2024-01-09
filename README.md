@@ -90,5 +90,5 @@ bin/Rmarkdown src/ARG_analysis/ARG_analysis_couples.Rmd figures/ARG_analysis/ARG
 
 ### Important Notes
 
-The raw sequences are deposited on NCBI Sequence Read Archive (SRA) under the BioProject accession number PRJNA1019702.
+The raw sequences are deposited on NCBI Sequence Read Archive (SRA) under the BioProject accession number [PRJNA1019702](https://www.ebi.ac.uk/ena/browser/text-search?query=PRJNA1019702).
 Please refer to the discussions section of the paper for the limitations of this study.
