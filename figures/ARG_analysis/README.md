@@ -1,1 +1,1 @@
-This folder will contain the figures with analysis results after running the dedicated scripts.
+This folder will contain the figures resulting from the antimicrobial resistance genes (ARGs) analysis.
