@@ -24,7 +24,7 @@ library("ggpubr")
 ## Load tables
 ```{r}
 mpa_file <- read_delim("data/species_composition/milk_infant_rel_abundance_contam_rm_keepOnly.txt", delim = '\t')
-my_metadata <- read_delim("data/metadata_complete.csv", delim = ',')
+my_metadata <- read_delim("data/metadata.csv", delim = ',')
 bifidos_rel_abs_mean <- read_delim("data/predominance_group/bifidos_relabs_mean.csv", delim = ',')
 ```
 
