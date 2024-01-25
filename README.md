@@ -107,4 +107,4 @@ bin/Rmarkdown src/ARG_analysis/ARG_analysis_couples.Rmd figures/ARG_analysis/ARG
 
 A subset of the whole dataset can be used to first get familiar with the code and the tools listed above. Please refer to the original papers and tutorials for the tools' computational requirements and running time. 
 
-Please refer to the discussions section of the paper for the limitations of this study.
+Please refer to the **Discussion** section of the paper for the limitations of this study.
