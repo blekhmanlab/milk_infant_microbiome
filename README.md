@@ -17,7 +17,7 @@ _______
 *Mattea Allert† , Pamela Ferretti† , Kelsey E. Johnson, Timothy Heisel, Sara Gonia, Dan Knights, David A. Fields, Frank W. Albert, Ellen W. Demerath, Cheryl A. Gale, and Ran Blekhman.*
 († equal contribution)
 ________
-For more information on the tools used and their references, please check the Methods section of the paper.
+For more information on the tools used and their references, please check the **Methods** section of the paper.
 
 ## Requirements
 
