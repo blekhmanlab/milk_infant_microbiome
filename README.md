@@ -105,6 +105,6 @@ bin/Rmarkdown src/ARG_analysis/ARG_analysis_couples.Rmd figures/ARG_analysis/ARG
 
 ### Notes
 
-A subset of the whole dataset can be used to first get familiar with the code and the tools listed above. Please refer to the original papers and tutorials for the tools' computational requirements and running time. 
+A subset of the whole dataset can be used to first get familiar with the code and the tools listed above. Please refer to the original papers and tutorials for the tools' computational requirements and running time. Supplementary tables can be downloaded on [Zenodo](https://zenodo.org/records/17089803?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6ImU1NmRkYzY5LWJjOTAtNGVhMC05MWE1LTdiZmMxMjNkMzE3OCIsImRhdGEiOnt9LCJyYW5kb20iOiIxNzM4YmFjZWVjNDg3YzlhY2Q1MjFhNWQwODVkMGZmOCJ9.sfYdLoV5zJ1NlGZIFkeLRLlDL5msRqMzEH2WnE_uSK7w47Q3KHVwpkr_1BmlvPvidDaR96rguLsitJP2wpOq5g).
 
 Please refer to the **Discussion** section of the paper for the limitations of this study.
