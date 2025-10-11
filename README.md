@@ -13,7 +13,7 @@ Taken together, our results suggest that the human milk microbiome has an import
 If you use the data, or find this work useful, please cite:
 _______
 ### Assembly of the infant gut microbiome and resistome are linked to bacterial strains in mother’s milk
-* Pamela Ferretti† , Mattea Allert†, Kelsey E. Johnson, Marco Rossi, Timothy Heisel, Sara Gonia, Dan Knights, David A. Fields, Frank W. Albert, Ellen W. Demerath, Cheryl A. Gale, and Ran Blekhman.*
+*Pamela Ferretti† , Mattea Allert†, Kelsey E. Johnson, Marco Rossi, Timothy Heisel, Sara Gonia, Dan Knights, David A. Fields, Frank W. Albert, Ellen W. Demerath, Cheryl A. Gale, and Ran Blekhman.*
 († equal contribution)
 ________
 For more information on the tools used and their references, please check the **Methods** section of the paper.
