@@ -27,7 +27,7 @@ The data analyses steps described below require the output of the following publ
 
 ## Raw Data
 
-The raw metagenomic sequences and the associated metadata were deposited and are available on NCBI Sequence Read Archive (SRA) under the BioProject accession numbers [PRJNA1019702](https://www.ebi.ac.uk/ena/browser/view/PRJNA1019702) and [PRJNA1198101](https://www.ebi.ac.uk/ena/browser/view/PRJNA1198101). Comprehensive metadata are available in the Supplementary Material and on [Zenodo](https://zenodo.org/records/17089803). 
+The raw metagenomic sequences and the associated metadata were deposited and are available on NCBI Sequence Read Archive (SRA) under the BioProject accession numbers [PRJNA1019702](https://www.ebi.ac.uk/ena/browser/view/PRJNA1019702) and [PRJNA1198101](https://www.ebi.ac.uk/ena/browser/view/PRJNA1198101). Comprehensive metadata are available in the Supplementary Material and on [Zenodo](https://zenodo.org/records/17317218). 
 
 ## Workflow
 
@@ -117,6 +117,6 @@ bin/Rmarkdown src/ARG_analysis/ARG_analysis_couples.Rmd figures/ARG_analysis/ARG
 
 ### Notes
 
-A subset of the whole dataset can be used to first get familiar with the code and the tools listed above. Please refer to the original papers and tutorials for the tools' computational requirements and running time. Supplementary tables can be downloaded on [Zenodo](https://zenodo.org/records/17089803).
+A subset of the whole dataset can be used to first get familiar with the code and the tools listed above. Please refer to the original papers and tutorials for the tools' computational requirements and running time. Supplementary tables can be downloaded on [Zenodo](https://zenodo.org/records/17317218).
 
 Please refer to the **Discussion** section of the paper for the limitations of this study.
