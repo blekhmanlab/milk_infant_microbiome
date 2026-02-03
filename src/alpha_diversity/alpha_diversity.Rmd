@@ -29,7 +29,7 @@ metadata <- read_delim("data/metadata.csv", delim = ',')
 
 ## Plot Shannon diversity 
 ```{r}
-shannon_file.meta <- left_join(shannon_file, metadata, by=c("Sample_clean"="Full_name")) %>% filter(!is.na(Sample_type))
+shannon_file.meta <- left_join(shannon_file, metadata, by=c("Sample_clean"="Sample_ID")) %>% filter(!is.na(Sample_type))
 
 shannon.plot <- ggplot(data = shannon_file.meta, 
        mapping = aes(x = Sample_type, y = diversity_shannon, fill = Sample_type)) +
