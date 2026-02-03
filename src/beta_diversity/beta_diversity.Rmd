@@ -63,7 +63,7 @@ ggplot(pcoa_t_df, aes(x = PC1, y = PC2)) +
 #Adding metadata to the plot
 ordered_IDs <- tibble::rownames_to_column(as.data.frame(species_t_matrix), "Full_name")
 pcoa_t_meta = bind_cols(pcoa_t_df, ordered_IDs[1])
-pcoa_t_meta.all = left_join(pcoa_t_meta, my_metadata, by = c("Full_name"="Old_sample_name"))
+pcoa_t_meta.all = left_join(pcoa_t_meta, my_metadata, by = c("Full_name"="Sample_ID"))
 
 pcoa_t_meta.all.clean <- pcoa_t_meta.all %>% 
   filter(Post_filtering_QC=="Keep")
