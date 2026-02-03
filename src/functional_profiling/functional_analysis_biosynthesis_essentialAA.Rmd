@@ -55,10 +55,11 @@ hum_file.clean.long <- hum_file.clean %>%
   pivot_longer(cols = !Pathway, names_to = "Sample", values_to = "Abundance") %>% 
   filter(Abundance>0)
 
-metadata.fixedOldFullName <- metadata %>% 
-  mutate(OldFullName=paste0(Old_sample_name, "_",Sample_ID))
+#metadata.fixedOldFullName <- metadata %>% 
+#  mutate(OldFullName=paste0(Old_sample_name, "_",Sample_ID))
 
-merged.pathways <- left_join(hum_file.clean.long, metadata.fixedOldFullName, by=c("Sample"="OldFullName"))
+#merged.pathways <- left_join(hum_file.clean.long, metadata.fixedOldFullName, by=c("Sample"="OldFullName"))
+merged.pathways <- left_join(hum_file.clean.long, metadata, by=c("Sample"="Sample_ID"))
 
 ```
 
