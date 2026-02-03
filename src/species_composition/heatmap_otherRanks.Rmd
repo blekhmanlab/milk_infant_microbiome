@@ -1,5 +1,5 @@
 ---
-title: "metaphlan heatmap amboseli baboons"
+title: "metaphlan heatmap - human breast milk"
 output: html_document
 ---
 
@@ -25,8 +25,8 @@ library(circlize)
 
 ## Load metaphlan tables
 ```{r}
-mpa_file.milk <- read_delim("data/species_composition/milk_samples_merged_abundance_contam_rm.txt", delim = '\t')
-mpa_file.stool <- read_delim("data/species_composition/infant_samples_merged_abundance_contam_rm.txt", delim = '\t')
+mpa_file.milk <- read_delim("data/species_composition/milk_samples_merged_abundance.txt", delim = '\t')
+mpa_file.stool <- read_delim("data/species_composition/infant_samples_merged_abundance.txt", delim = '\t')
 metadata.master <- read_delim("data/metadata.csv", delim = ',')
 bifido_groups <- read_delim("data/predominance_group/bifidos_groups.csv", delim = ',')
 ```
@@ -92,9 +92,9 @@ colnames_ordered.milk <- rownames_to_column(as.data.frame(t(mpa_file.milk.family
   select(rowname)
 
 metadata.master.ext <- metadata.master %>% 
-  mutate(Full_name_ext = paste0(Full_name, "_mean"))
+  mutate(Sample_ID_ext = paste0(Sample_ID, "_mean"))
 
-colnames_ordered.milk.metadata <- left_join(colnames_ordered.milk, metadata.master.ext, by=c("rowname"="Full_name_ext")) 
+colnames_ordered.milk.metadata <- left_join(colnames_ordered.milk, metadata.master.ext, by=c("rowname"="Sample_ID_ext")) 
 
 #add info bifido groups
 metadata.milk.full <- left_join(colnames_ordered.milk.metadata, bifido_groups, by=c("rowname"="Sample"))
@@ -216,9 +216,9 @@ colnames_ordered.stool <- rownames_to_column(as.data.frame(t(mpa_file.stool.fami
   select(rowname)
 
 metadata.master.ext <- metadata.master %>% 
-  mutate(Full_name_ext = paste0(Full_name, "_mean"))
+  mutate(Sample_ID_ext = paste0(Sample_ID, "_mean"))
 
-colnames_ordered.stool.metadata <- left_join(colnames_ordered.stool, metadata.master.ext, by=c("rowname"="Full_name_ext")) 
+colnames_ordered.stool.metadata <- left_join(colnames_ordered.stool, metadata.master.ext, by=c("rowname"="Sample_ID_ext")) 
 
 #add info bifido groups
 metadata.stool.full <- left_join(colnames_ordered.stool.metadata, bifido_groups, by=c("rowname"="Sample"))
