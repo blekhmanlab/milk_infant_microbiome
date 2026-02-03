@@ -26,7 +26,7 @@ metadata <- read_delim("data/metadata.csv", delim = ',')
 ```{r, message=FALSE, warning=FALSE}
 #load file with per-sample predominance groups information
 bifido_groups <- read_delim("data/predominance_group/bifidos_groups.csv", delim = ',')
-metadata.full <- left_join(metadata, bifido_groups, by=c("Full_name"="Sample"))
+metadata.full <- left_join(metadata, bifido_groups, by=c("Sample_ID"="Sample"))
 
 groups.stats <- metadata.full %>% 
   filter(!is.na(Group)) %>% 
