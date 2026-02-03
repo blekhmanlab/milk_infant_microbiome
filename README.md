@@ -15,6 +15,8 @@ _______
 ### Assembly of the infant gut microbiome and resistome are linked to bacterial strains in mother’s milk
 *Pamela Ferretti† , Mattea Allert†, Kelsey E. Johnson, Marco Rossi, Timothy Heisel, Sara Gonia, Dan Knights, David A. Fields, Frank W. Albert, Ellen W. Demerath, Cheryl A. Gale, and Ran Blekhman.*
 († equal contribution)
+
+https://doi.org/10.1038/s41467-025-66497-y
 ________
 For more information on the tools used and their references, please check the **Methods** section of the paper.
 
@@ -27,7 +29,7 @@ The data analyses steps described below require the output of the following publ
 
 ## Raw Data
 
-The raw metagenomic sequences and the associated metadata were deposited and are available on NCBI Sequence Read Archive (SRA) under the BioProject accession numbers [PRJNA1019702](https://www.ebi.ac.uk/ena/browser/view/PRJNA1019702) and [PRJNA1198101](https://www.ebi.ac.uk/ena/browser/view/PRJNA1198101). Comprehensive metadata are available in the Supplementary Material and on [Zenodo](https://zenodo.org/records/18421367). 
+The raw metagenomic sequences and the associated metadata were deposited and are available on NCBI Sequence Read Archive (SRA) under the BioProject accession numbers [PRJNA1019702](https://www.ebi.ac.uk/ena/browser/view/PRJNA1019702) and [PRJNA1198101](https://www.ebi.ac.uk/ena/browser/view/PRJNA1198101). All metadata tables are available on [Zenodo](https://zenodo.org/records/18421367). 
 
 ## Workflow
 
@@ -117,6 +119,6 @@ bin/Rmarkdown src/ARG_analysis/ARG_analysis_couples.Rmd figures/ARG_analysis/ARG
 
 ### Notes
 
-A subset of the whole dataset can be used to first get familiar with the code and the tools listed above. Please refer to the original papers and tutorials for the tools' computational requirements and running time. Supplementary tables can be downloaded on [Zenodo](https://zenodo.org/records/17317218).
+A subset of the whole dataset can be used to first get familiar with the code and the tools listed above. Please refer to the original papers and tutorials for the tools' computational requirements and running time. Supplementary tables can be downloaded from [Zenodo](https://zenodo.org/records/18421367).
 
 Please refer to the **Discussion** section of the paper for the limitations of this study.
