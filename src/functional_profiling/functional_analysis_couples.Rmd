@@ -23,7 +23,7 @@ library(gap)
 ## Load files
 ```{r}
 #HUMAnN output file
-humann_raw <- read_delim("data/functional_profiling/milk_infant_relab_pathabundance_UNFILTERED.tsv", delim = '\t')
+humann_raw <- read_delim("data/functional_profiling/milk_infant_relab_pathabundance.tsv", delim = '\t')
 #metadata table
 metadata <- read_delim("data/metadata.csv", delim = ',')
 ```
@@ -55,9 +55,9 @@ hum_file.clean.long <- hum_file.clean %>%
 hum_file.clean.long <- left_join(hum_file.clean.long, humann_raw.sep %>% select(Pathway, Genus, Species), by="Pathway")
 
 metadata <- metadata %>% 
-  select(Full_name, Sample_type, Bodysite, `Mother Infant Pair`)
+  select(Sample_ID, Sample_type, Bodysite, `Mother Infant Pair`)
 
-merged.pathways.master <- left_join(hum_file.clean.long, metadata, by=c("Sample"="Full_name"))
+merged.pathways.master <- left_join(hum_file.clean.long, metadata, by=c("Sample"="Sample_ID"))
 ```
 
 # Pathways similarities between mother-infant pairs
