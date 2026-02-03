@@ -1,5 +1,5 @@
 ---
-title: "Analaysis of species stability over time and differential abundance between exclsuive BF and not excl. breastfed"
+title: "Analaysis of species stability over time and differential abundance between exclusive breastfed and not exclusively breastfed infants"
 output: html_document
 ---
 
@@ -26,7 +26,7 @@ library(ComplexHeatmap)
 ## Load tables
 ```{r}
 #metaphlan output table
-mpa_file <- read_delim("data/species_composition/milk_infant_rel_abundance_contam_rm_keepOnly.txt", delim = '\t')
+mpa_file <- read_delim("data/species_composition/milk_infant_rel_abundance.txt", delim = '\t')
 metadata <- read_delim("data/metadata.csv", delim = ',')
 ```
 
@@ -55,7 +55,7 @@ mpa_file.species.long <- mpa_file.species.long %>%
   tidyr::separate(Sample, c('Sample', 'number'), sep ='_', remove = FALSE, fill="right") 
 
 #merge with metadata table
-merged.species <- left_join(mpa_file.species.long, metadata, by=c("full_ID"="Old_sample_name"))
+merged.species <- left_join(mpa_file.species.long, metadata, by=c("full_ID"="Sample_ID"))
 merged.species.clean <- merged.species %>% 
   select(Species, Sample, Abundance, Sample_type, `Mother Infant Pair`, Exclusive_bf) %>% 
   filter(Abundance>0) %>% 
