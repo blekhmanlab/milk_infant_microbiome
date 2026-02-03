@@ -27,7 +27,7 @@ library(dendsort)
 #Load tables
 ```{r}
 #humann results
-humann_all <- read_delim("data/functional_profiling/milk_infant_relab_pathabundance_UNFILTERED.tsv", delim = '\t')
+humann_all <- read_delim("data/functional_profiling/milk_infant_relab_pathabundance.tsv", delim = '\t')
 #metadata
 metadata.milk <- read_delim("data/metadata_MilkOnly.csv", delim = ',')
 metadata.stool <- read_delim("data/metadata_StoolOnly.csv", delim = ',')
