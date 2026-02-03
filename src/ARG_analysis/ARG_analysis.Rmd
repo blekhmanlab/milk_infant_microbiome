@@ -47,7 +47,7 @@ names <- str_split_fixed(arg_file$filename, "_", 2)
 arg_file.names <- cbind(arg_file, names)
 
 all.samples <- c(metadata %>% 
-  pull(Old_sample_name))
+  pull(Sample_ID))
 
 arg_file.clean.pcoa <- arg_file.names %>% 
   filter(identity>=95) %>% 
@@ -85,7 +85,7 @@ order.samples <- as.data.frame(a %>%
   ungroup() %>% 
   select(`1`))
 
-meta_ordered = left_join(order.samples, metadata, by=c(`1`="Old_sample_name"))
+meta_ordered = left_join(order.samples, metadata, by=c(`1`="Sample_ID"))
 meta_ordered.clean <- unique(meta_ordered)
 
 pcoa_meta = bind_cols(pcoa_df, meta_ordered.clean)
