@@ -1,0 +1,346 @@
+---
+title: "Heatmap of the taxonomic composition of milk and infant stool samples - subspecies analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message=FALSE)
+options(stringsAsFactors = FALSE)
+```
+
+
+#Prepare environment.
+```{r}
+
+library(tidyverse)
+library(ggplot2)
+library(stringr)
+library(circlize)
+library(devtools)
+library(ComplexHeatmap)
+library(dendsort)
+
+```
+
+#Load tables
+```{r}
+#stool 
+mpa_file.stool <- read_delim("../../raw_data/master_metaphlan_subspecies_clean_stool_keepOnly.tsv", delim = '\t')
+
+#milk
+mpa_file.milk <- read_delim("../../raw_data/master_metaphlan_subspecies_clean_milk_keepOnly.tsv", delim = '\t')
+
+#predominant group metadata
+bifido_groups <- read_delim("../../data_analysis/bifidos/bifidos_groups.csv", delim = ',')
+
+#metadata
+metadata.master <- read_delim("../../metadata/metadata_complete_clean.csv", delim = ',')
+
+```
+
+#Heatmap for infant stool samples
+```{r}
+#separate full clade name into taxonomic levels
+mpa_file.stool.delim <- mpa_file.stool %>% 
+  tidyr::separate(clade_name, c('Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Strain'), sep ='\\|', remove = FALSE, fill="right") 
+
+#select clades assigned to species level
+mpa_file.stool.clean.species <- mpa_file.stool.delim %>% 
+  filter(!is.na(Species)) 
+
+#keep simplified species name only
+to.drop <- c("clade_name", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus")
+mpa_file.stool.species = mpa_file.stool.clean.species[,!(names(mpa_file.stool.clean.species) %in% to.drop)]
+mpa_file.stool.species$Species <- str_remove(mpa_file.stool.species$Species, pattern = "s__")
+mpa_file.stool.species$Strain <- str_remove(mpa_file.stool.species$Strain, pattern = "t__")
+mpa_file.stool.species$Species <- gsub("_", " ", mpa_file.stool.species$Species)
+mpa_file.stool.species$Strain <- gsub("_", " ", mpa_file.stool.species$Strain)
+
+mpa_file.stool.species.subspecies.partial1 <- mpa_file.stool.species %>% 
+  filter(Species=="Bifidobacterium longum" & !is.na(Strain)) %>% 
+  mutate(Species_subsp1 = paste0(Species, " ", Strain)) %>% 
+  mutate(Species_subsp = ifelse(Species_subsp1=="Bifidobacterium longum Bifidobacterium longum unclassified", "Bifidobacterium longum unclassified", Species_subsp1)) %>% 
+  select(-Species, -Strain, -Species_subsp1)
+
+mpa_file.stool.species.subspecies.partial2 <- mpa_file.stool.species %>% 
+  filter(Species!="Bifidobacterium longum" & is.na(Strain)) %>% 
+  mutate(Species_subsp = Species) %>% 
+  select(-Species, -Strain)
+
+merged.stool <- rbind(mpa_file.stool.species.subspecies.partial1, mpa_file.stool.species.subspecies.partial2)
+
+tmp <- as.data.frame(merged.stool %>% 
+  remove_rownames %>% 
+  column_to_rownames(var="Species_subsp") %>% 
+  rowSums())
+
+colnames(tmp)[1] = "sum_abs"
+
+bifido_list <- c("Bifidobacterium longum unclassified", "Bifidobacterium longum subsp.longum", "Bifidobacterium longum subsp.infantis")
+
+mpa_file.stool.species.clean <- merged.stool %>% 
+ filter(Species_subsp %in% bifido_list) %>% 
+  remove_rownames %>% 
+  column_to_rownames(var="Species_subsp") 
+
+#get columns metadata
+colnames_ordered.stool <- rownames_to_column(as.data.frame(t(mpa_file.stool.species.clean))) %>% 
+  select(rowname)
+  
+colnames_ordered.stool.metadata <- left_join(colnames_ordered.stool, metadata.master, by=c("rowname"="Sample_ID")) 
+
+#add predominance groups metadata
+metadata.stool.full <- left_join(colnames_ordered.stool.metadata, bifido_groups, by=c("rowname"="Sample"))
+
+metadata.stool.full <- metadata.stool.full %>% 
+  mutate(Delivery_mode_vag=ifelse(Delivery_mode=="CS", "No",
+                                  ifelse(Delivery_mode==0, "NA",
+                                         "Yes"))) 
+
+metadata.stool.full <- metadata.stool.full %>% 
+  replace(is.na(.), "NA") 
+
+#Set annotation
+ann.stool <- data.frame(metadata.stool.full$`Sample_type`, 
+                  metadata.stool.full$`Delivery_mode_vag`, 
+                  metadata.stool.full$`Exclusive_bf`,
+                 metadata.stool.full$`Abx_exposure_any`)
+
+colnames(ann.stool) <- c('Sample_type', 'Delivery_mode_vag','Exclusive_bf', 
+                   'Abx_exposure_any')
+
+colours.stool <- list('Sample_type' = c('Stool_1M' = "#5e3c99", 'Stool_6M' = "#b2abd2"),
+  'Delivery_mode_vag' = c('Yes' = 'black', 'No' = '#BEBEBE', 'NA' = 'white'),
+  'Exclusive_bf' = c('Yes' = 'black', 'No' = '#BEBEBE',  'NA' = 'white'),
+  'Abx_exposure_any' = c('Yes' = 'black', 'No' = '#BEBEBE', 'NA' = 'white'))
+colAnn.stool <- HeatmapAnnotation(df = ann.stool,
+  which = 'col',
+  col = colours.stool,
+  annotation_width = unit(c(0.1, 0.1), 'cm'),
+  gap = unit(0.5, 'mm'))
+
+col_fun = colorRamp2(c(0, 0.01, 0.1, 1, 70, 100), 
+                     c("white","#e5e8f2","#ccd1e6", "#6776b5", '#35499d', "#000000"))
+
+#remove columns of samples that git discarded in post filtering QC
+keep.samples.stool.list <- c(metadata.stool.full %>% pull(rowname))
+
+mpa_file.stool.species.t.keepOnly <- rownames_to_column(as.data.frame(t(mpa_file.stool.species.clean))) %>% 
+  filter(rowname %in% keep.samples.stool.list)
+
+rownames(mpa_file.stool.species.t.keepOnly) <- mpa_file.stool.species.t.keepOnly[,1]
+mpa_file.stool.species.t.keepOnly.t <- as.data.frame(t(mpa_file.stool.species.t.keepOnly %>% select(-rowname)))
+
+mpa.stool.mat <- as.matrix(mpa_file.stool.species.t.keepOnly.t)
+row_dend.stool = dendsort(hclust(dist(mpa.stool.mat)))
+col_dend.stool = dendsort(hclust(dist(t(mpa.stool.mat))))
+
+#plot heatmap stool samples
+heat.stool <- Heatmap(mpa.stool.mat, 
+        name = "Abundance", 
+        cluster_columns = col_dend.stool,
+        clustering_distance_rows = "euclidean", 
+        clustering_distance_columns = "euclidean",
+        show_column_names = FALSE, 
+        show_row_dend = FALSE, 
+        col = col_fun, 
+        row_names_gp = gpar(fontsize = 8),
+        top_annotation=colAnn.stool, 
+        column_dend_height = unit(5, "mm"))
+
+pdf(file=paste0("figures/heatmap_Stool_bifidos_subspecies.pdf"), width=10, height=4)
+heat.stool
+dev.off()
+
+heat.stool
+```
+
+#Heatmap for maternal milk samples
+```{r}
+#separate full clade name into taxonomic levels
+mpa_file.milk.delim <- mpa_file.milk %>% 
+  tidyr::separate(clade_name, c('Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Strain'), sep ='\\|', remove = FALSE, fill="right") 
+
+#select clades assigned to species level
+mpa_file.milk.clean.species <- mpa_file.milk.delim %>% 
+  filter(!is.na(Species)) 
+
+#keep simplified species name only
+to.drop <- c("clade_name", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus")
+mpa_file.milk.species = mpa_file.milk.clean.species[,!(names(mpa_file.milk.clean.species) %in% to.drop)]
+mpa_file.milk.species$Species <- str_remove(mpa_file.milk.species$Species, pattern = "s__")
+mpa_file.milk.species$Species <- gsub("_", " ", mpa_file.milk.species$Species)
+mpa_file.milk.species$Strain <- str_remove(mpa_file.milk.species$Strain, pattern = "t__")
+mpa_file.milk.species$Strain <- gsub("_", " ", mpa_file.milk.species$Strain)
+
+mpa_file.milk.species.subspecies.partial1 <- mpa_file.milk.species %>% 
+  filter(Species=="Bifidobacterium longum" & !is.na(Strain)) %>% 
+  mutate(Species_subsp1 = paste0(Species, " ", Strain)) %>% 
+  mutate(Species_subsp = ifelse(Species_subsp1=="Bifidobacterium longum Bifidobacterium longum unclassified", "Bifidobacterium longum unclassified", Species_subsp1)) %>% 
+  select(-Species, -Strain, -Species_subsp1)
+
+mpa_file.milk.species.subspecies.partial2 <- mpa_file.milk.species %>% 
+  filter(Species!="Bifidobacterium longum" & is.na(Strain)) %>% 
+  mutate(Species_subsp = Species) %>% 
+  select(-Species, -Strain)
+
+merged.milk <- rbind(mpa_file.milk.species.subspecies.partial1, mpa_file.milk.species.subspecies.partial2)
+
+mpa_file.milk.species.clean <- merged.milk %>% 
+ filter(Species_subsp %in% bifido_list) %>% 
+  remove_rownames %>% 
+  column_to_rownames(var="Species_subsp") 
+
+#get columns metadata
+colnames_ordered <- rownames_to_column(as.data.frame(t(mpa_file.milk.species.clean))) %>% 
+  select(rowname)
+  
+colnames_ordered.metadata <- left_join(colnames_ordered, metadata.master, by=c("rowname"="Sample_ID")) 
+
+#add info bifido groups
+metadata.milk.full <- left_join(colnames_ordered.metadata, bifido_groups, by=c("rowname"="Sample"))
+
+# #discard samples that did not pass post-filtering QC
+metadata.milk.full.clean <- metadata.milk.full %>% 
+   filter(`Post_filtering_QC`=="Keep")
+
+#Set annotation
+ann.milk <- data.frame(metadata.milk.full.clean$`Sample_type`)
+colnames(ann.milk) <- c('Sample_type')
+
+colours.milk <- list('Sample_type' = c('Milk_1M' = "#e66101", 'Milk_3M' = "#fdb863"))
+
+colAnn.milk <- HeatmapAnnotation(df = ann.milk,
+  which = 'col',
+  col = colours.milk,
+  annotation_width = unit(c(1, 4), 'cm'),
+  gap = unit(1, 'mm'))
+
+col_fun.milk = colorRamp2(c(0, 0.01, 0.1, 1, 70, 100), 
+                     c("white","#e5e8f2","#ccd1e6", "#6776b5", '#35499d', "#000000"))
+
+#remove columns of samples that git discarded in post filtering QC
+keep.samples.milk.list <- c(metadata.milk.full.clean %>% pull(rowname))
+
+mpa_file.milk.species.clean.t.keepOnly <- rownames_to_column(as.data.frame(t(mpa_file.milk.species.clean))) %>% 
+  filter(rowname %in% keep.samples.milk.list)
+
+rownames(mpa_file.milk.species.clean.t.keepOnly) <- mpa_file.milk.species.clean.t.keepOnly[,1]
+mpa_file.milk.species.clean.t.keepOnly.t <- as.data.frame(t(mpa_file.milk.species.clean.t.keepOnly %>% select(-rowname)))
+
+mpa.milk.mat <- as.matrix(mpa_file.milk.species.clean.t.keepOnly.t)
+row_dend.milk = dendsort(hclust(dist(mpa.milk.mat)))
+col_dend.milk = dendsort(hclust(dist(t(mpa.milk.mat))))
+
+#plot heatmap milk
+heat.milk <- Heatmap(mpa.milk.mat, 
+        name = "Abundance", 
+        cluster_columns = col_dend.milk,
+        clustering_distance_rows = "euclidean", 
+        clustering_distance_columns = "euclidean",
+        show_column_names = FALSE, 
+        show_row_dend = FALSE, 
+        col = col_fun.milk, 
+        row_names_gp = gpar(fontsize = 8),
+        top_annotation=colAnn.milk, 
+        column_dend_height = unit(5, "mm"))
+
+pdf(file=paste0("figures/heatmap_Milk_bifidos_subspecies.pdf"), width=10, height=4)
+heat.milk
+dev.off()
+
+heat.milk
+```
+# prevalences B. longum subspecies in milk and stool samples
+
+## Extract species and subspecies information
+```{r}
+mpa_file <- read_delim("../../raw_data/master_metaphlan_subspecies_clean_milk_stool_keepOnly.tsv", delim = '\t')
+
+#separate full clade name into taxonomic levels
+mpa_file.delim <- mpa_file %>% 
+  tidyr::separate(clade_name, c('Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Strain'), sep ='\\|', remove = FALSE, fill="right") 
+
+#select clades assigned to species level
+mpa_file.clean.species <- mpa_file.delim %>% 
+  filter(!is.na(Species)) 
+
+#keep simplified species name only
+to.drop <- c("clade_name", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus")
+mpa_file.species = mpa_file.clean.species[,!(names(mpa_file.clean.species) %in% to.drop)]
+mpa_file.species$Species <- str_remove(mpa_file.species$Species, pattern = "s__")
+mpa_file.species$Strain <- str_remove(mpa_file.species$Strain, pattern = "t__")
+mpa_file.species$Species <- gsub("_", " ", mpa_file.species$Species)
+mpa_file.species$Strain <- gsub("_", " ", mpa_file.species$Strain)
+
+#add subspecies_info
+mpa_file.species.subspecies.blongum <- mpa_file.species %>% 
+  filter(Species=="Bifidobacterium longum" & !is.na(Strain)) %>% 
+  mutate(Species_subsp1 = paste0(Species, " ", Strain)) %>% 
+  mutate(Species_subsp = ifelse(Species_subsp1=="Bifidobacterium longum Bifidobacterium longum unclassified", "Bifidobacterium longum unclassified", Species_subsp1)) %>% 
+  select(-Species, -Strain, -Species_subsp1)
+
+mpa_file.species.subspecies.blongum.long <- mpa_file.species.subspecies.blongum %>% 
+  pivot_longer(cols = !Species_subsp, names_to = "Sample", values_to = "Abundance") 
+
+#merge with metadata table
+merged.long.meta <- left_join(mpa_file.species.subspecies.blongum.long, metadata.master, by=c("Sample"="Sample_ID"))
+
+
+list_species <- c("Bifidobacterium longum subsp.longum", "Bifidobacterium longum subsp.infantis")
+
+target_species <- merged.long.meta %>% 
+    filter(Post_filtering_QC=="Keep" & Species_subsp %in% list_species) %>% 
+    select(Species_subsp, Abundance, Sample_type) %>%
+    filter(!is.na(Sample_type)) %>% 
+    mutate(Sample_type_binary = ifelse(Abundance==0, 0,
+                                     ifelse(Abundance>0, 1, NA))) %>% 
+  filter(Sample_type_binary==1) %>% 
+    group_by(Species_subsp, Sample_type) %>% 
+    summarise(n=n()) 
+    
+totals <- metadata.master %>% 
+    filter(Post_filtering_QC=="Keep" & !is.na(Sample_type)) %>% 
+    group_by(Sample_type) %>% 
+    summarise(totals=n()) 
+  
+merged.totals <- merge(target_species, totals, by="Sample_type")
+    
+merged.totals.perc <- merged.totals %>% 
+  mutate(perc=n*100/totals) %>% 
+  select(Species_subsp, perc, Sample_type)
+
+merged.totals.perc$perc <- as.double(merged.totals.perc$perc)
+
+pdf(file=paste0("figures/barplot_bifido_subspecies.pdf"), width=6, height=4)
+
+#stacked barplot
+ggplot(merged.totals.perc, aes(fill=Species_subsp, y=perc, x=Sample_type)) +
+  geom_bar(position = "dodge", stat = "identity")+
+  scale_fill_manual(values=c('pink', 'grey'))+
+  theme_bw()+
+  coord_flip()
+dev.off()
+
+```
+
+#longum subspecies - mean relative abundances boxplot
+```{r}
+
+library(ggpubr)
+mean_relabs <- merged.long.meta %>% 
+    filter(Post_filtering_QC=="Keep" & Species_subsp %in% list_species) %>% 
+    select(Species_subsp, Abundance, Sample_type) %>%
+    filter(!is.na(Sample_type))
+
+
+pdf(file=paste0("figures/boxplot_rel_abs_subspecies.pdf"), width=8, height=4)
+ ggplot(mean_relabs, aes(x=Sample_type, y=Abundance, fill=Species_subsp)) +
+  geom_boxplot(outlier.size = -1)+
+  geom_jitter(shape=16, position=position_jitterdodge(jitter.width = 0.1), color="grey20", alpha=0.5, size=1) +
+  theme_bw() +
+  stat_compare_means(method = "t.test", p.adjust.method = "bonferroni")
+dev.off()
+
+```
+

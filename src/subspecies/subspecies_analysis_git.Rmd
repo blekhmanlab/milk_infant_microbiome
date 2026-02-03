@@ -1,0 +1,58 @@
+---
+title: "subspecies analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message=FALSE)
+options(stringsAsFactors = FALSE)
+```
+
+
+#Prepare environment.
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(stringr)
+library(circlize)
+library(devtools)
+library(ComplexHeatmap)
+library(dendsort)
+
+```
+
+#Load tables
+```{r}
+#stool 
+mpa.subspecies <- read_delim("../../raw_data/metaphlan4_bifidoSubspecies_merged_abundance.txt", delim = '\t')
+
+#metadata
+metadata.master <- read_delim("../../metadata/metadata_complete.csv", delim = ',')
+
+```
+
+#create table subspecies dominance
+```{r}
+#separate full clade name into taxonomic levels
+mpa.subspecies.delim <- mpa.subspecies %>% 
+  tidyr::separate(clade_name, c('Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Strain'), sep ='\\|', remove = FALSE, fill="right") 
+
+#select clades assigned to species level
+mpa.subspecies.blongum <- mpa.subspecies.delim %>% 
+  filter(Species=="s__Bifidobacterium_longum" & !is.na(Strain)) 
+
+#keep simplified species name only
+to.drop <- c("clade_name", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+mpa.subspecies.blongum = mpa.subspecies.blongum[,!(names(mpa.subspecies.blongum) %in% to.drop)]
+mpa.subspecies.blongum$Strain <- str_remove(mpa.subspecies.blongum$Strain, pattern = "t__")
+mpa.subspecies.blongum$Strain <- gsub("_", " ", mpa.subspecies.blongum$Strain)
+
+tmp <- as.data.frame(mpa.subspecies.blongum %>% 
+  remove_rownames %>% 
+  column_to_rownames(var="Strain"))
+  
+tmp.t <- as.data.frame(t(mpa.subspecies.blongum))
+tmp.t$subspecies <- rownames(tmp.t)
+write_csv(tmp.t, "subspecies_metadata.csv", )
+
+```
