@@ -27,7 +27,7 @@ The data analyses steps described below require the output of the following publ
 
 ## Raw Data
 
-The raw metagenomic sequences and the associated metadata were deposited and are available on NCBI Sequence Read Archive (SRA) under the BioProject accession numbers [PRJNA1019702](https://www.ebi.ac.uk/ena/browser/view/PRJNA1019702) and [PRJNA1198101](https://www.ebi.ac.uk/ena/browser/view/PRJNA1198101). Comprehensive metadata are available in the Supplementary Material and on [Zenodo](https://zenodo.org/records/17317218). 
+The raw metagenomic sequences and the associated metadata were deposited and are available on NCBI Sequence Read Archive (SRA) under the BioProject accession numbers [PRJNA1019702](https://www.ebi.ac.uk/ena/browser/view/PRJNA1019702) and [PRJNA1198101](https://www.ebi.ac.uk/ena/browser/view/PRJNA1198101). Comprehensive metadata are available in the Supplementary Material and on [Zenodo](https://zenodo.org/records/18421367). 
 
 ## Workflow
 
