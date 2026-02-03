@@ -23,9 +23,9 @@ library(dendsort)
 #Load tables
 ```{r}
 #stool 
-mpa_file.stool <- read_delim("data/species_composition/infant_rel_abundance_contam_rm_keepOnly.txt", delim = '\t')
+mpa_file.stool <- read_delim("data/species_composition/infant_rel_abundance.txt", delim = '\t')
 #milk
-mpa_file.milk <- read_delim("data/species_composition/milk_rel_abundance_contam_rm_keepOnly.txt", delim = '\t')
+mpa_file.milk <- read_delim("data/species_composition/milk_rel_abundance.txt", delim = '\t')
 #predominant group metadata
 bifido_groups <- read_delim("data/predominance_group/bifidos_groups.csv", delim = ',')
 #metadata
@@ -74,10 +74,10 @@ mpa_file.stool.species.clean <- mpa_file.stool.species %>%
 colnames_ordered.stool <- rownames_to_column(as.data.frame(t(mpa_file.stool.species.clean))) %>% 
   select(rowname)
   
-colnames_ordered.stool.metadata <- left_join(colnames_ordered.stool, metadata.master, by=c("rowname"="Old_sample_name")) 
+colnames_ordered.stool.metadata <- left_join(colnames_ordered.stool, metadata.master, by=c("rowname"="Sample_ID")) 
 
 #add info bifido groups
-metadata.stool.full <- left_join(colnames_ordered.stool.metadata, bifido_groups, by=c("Full_name"="Sample"))
+metadata.stool.full <- left_join(colnames_ordered.stool.metadata, bifido_groups, by=c("Sample_ID"="Sample"))
 
 #discard samples that did not pass post-filtering QC
 metadata.stool.full.clean <- metadata.stool.full %>% 
@@ -185,10 +185,10 @@ mpa_file.milk.species.clean <- mpa_file.milk.species %>%
 colnames_ordered <- rownames_to_column(as.data.frame(t(mpa_file.milk.species.clean))) %>% 
   select(rowname)
   
-colnames_ordered.metadata <- left_join(colnames_ordered, metadata.master, by=c("rowname"="Old_sample_name")) 
+colnames_ordered.metadata <- left_join(colnames_ordered, metadata.master, by=c("rowname"="Sample_ID")) 
 
 #add info bifido groups
-metadata.milk.full <- left_join(colnames_ordered.metadata, bifido_groups, by=c("Full_name"="Sample"))
+metadata.milk.full <- left_join(colnames_ordered.metadata, bifido_groups, by=c("Sample_ID"="Sample"))
 
 #discard samples that did not pass post-filtering QC
 metadata.milk.full.clean <- metadata.milk.full %>% 
