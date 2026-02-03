@@ -21,7 +21,7 @@ library(data.table)
 ## Load and manipulate metaphlan output
 ```{r}
 #metaphlan output table
-mpa_file <- read_delim("data/species_composition/milk_infant_rel_abundance_contam_rm_keepOnly.txt", delim = '\t')
+mpa_file <- read_delim("data/species_composition/milk_infant_rel_abundance.txt", delim = '\t')
 #metadata file
 metadata <- read_delim("data/metadata.csv", delim = ',')
 #predominance group file
@@ -59,10 +59,10 @@ mpa_file.species.long <- mpa_file.species.long %>%
 metadata <- metadata %>% select(-Correct_sample_name) 
 
 #load and predominance groups information
-metadata.full <- left_join(metadata, bifido_groups, by=c("Old_sample_name"="Sample"))
+metadata.full <- left_join(metadata, bifido_groups, by=c("Sample_ID"="Sample"))
 
 #merge with metadata table
-merged.species <- left_join(mpa_file.species.long, metadata.full, by=c("Sample"="Old_sample_name"))
+merged.species <- left_join(mpa_file.species.long, metadata.full, by=c("Sample"="Sample_ID"))
 merged.species.clean <- merged.species %>% 
    select(Species, Sample, Abundance, Sample_type, `Mother Infant Pair`, Bodysite, Group) %>% 
   filter(Abundance>0) %>% 
