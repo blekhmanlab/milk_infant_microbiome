@@ -22,7 +22,7 @@ library(stringr)
 #strains table
 strain_file <- read_delim("data/strains/strain_x_sample.csv", delim = ',')
 #species table
-mpa_file <- read_delim("data/species_composition/milk_infant_rel_abundance_contam_rm_keepOnly.txt", delim = '\t')
+mpa_file <- read_delim("data/species_composition/milk_infant_rel_abundance.txt", delim = '\t')
 #metadata
 metadata <- read_delim("data/metadata.csv", delim = ',')
 ```
@@ -42,11 +42,11 @@ bothTimePoints.couple <- c(metadata %>%
 #only stool samples at 1Mto see if there is strain sharing within the hospital
 stool.1M <- c(metadata %>% 
   filter(Sample_type=="Stool_1M" & `Mother Infant Pair` %in% bothTimePoints.couple) %>% 
-  pull(Old_sample_name))
+  pull(Sample_ID))
   
 stool.6M <- c(metadata %>% 
   filter(Sample_type=="Stool_6M" & `Mother Infant Pair` %in% bothTimePoints.couple) %>% 
-  pull(Old_sample_name))
+  pull(Sample_ID))
 
 strain.list <- strain_file %>% 
   pull(Strain_name)
@@ -55,9 +55,9 @@ strain.list <- strain_file %>%
 infants_loop <- data.frame()
 
 #create sampleID - coupleID
-Old_sample_name <- metadata$Old_sample_name
+Sample_ID <- metadata$Sample_ID
 `Mother Infant Pair` <- metadata$`Mother Infant Pair`
-df <- data.frame(Old_sample_name, `Mother Infant Pair`) 
+df <- data.frame(Sample_ID, `Mother Infant Pair`) 
 
 
 for (strain in strain.list) {
@@ -103,7 +103,7 @@ infants_loop.speciesNames.clean <- infants_loop.speciesNames %>%
   filter(present_1M=="1" | present_6M=="1")
 
 #save results as suppl. table
-write.csv(infants_loop.speciesNames.clean, "STable4.csv") 
+write.csv(infants_loop.speciesNames.clean, "Supplementary_Data_4.csv") 
 ```
 
 
